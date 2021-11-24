@@ -67,14 +67,15 @@ class Mover
         bool _isRunning = false;
         bool _isInitialized = false;
         int _graduations;
-        int _pinIndex;
+        byte _pinIndex;
         unsigned long _oldTime;
         int _currentSpeed;
 
         static void encoderHandler()
         {
+            // Check whether second signal from encoder is 0
             // !!! test in backward direction!
-            if (!digitalRead(3)) // <-- Is this really needed?
+            if (digitalRead(3) == 0)
                 graduationCount++;
         }
 
@@ -151,7 +152,7 @@ int stepNumber;
 int oldCommonCount;
 
 void loop() {
-  const int stepCount = 20; // 4, 8, 18, 20, 24, 30, 36, 45, 60, 72, 90, 120
+  const int stepCount = 18; // 4, 8, 18, 20, 24, 30, 36, 45, 60, 72, 90, 120
   const int graduations = 1080 / stepCount;
 
   bool newButtonState = digitalRead(RED_BUTTON);
