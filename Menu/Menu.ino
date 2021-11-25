@@ -15,65 +15,51 @@ enum Menus
     M_LAST      = 4
 };
 
+struct MenuItem
+{
+    String top;
+    String bottom;
+};
+
 class Menu
 {
     public:
-        short int menu = M_FIRST;
+        int current = 0;
+
+        Menu(MenuItem* items, int length)
+        {
+            _items = items;
+            _length = length;
+        }
 
         void display()
         {
-            switch (menu)
-            {
-                case AUTO:
-                    printTop("Automatic");
-                    printBottom("press to start");
-                    break;
-
-                case MANUAL:
-                    printTop("Manual");
-                    printBottom("press to start");
-                    break;
-                    
-                case NONSTOP:
-                    printTop("Nonstop");
-                    printBottom("press to start");
-                    break;
-                    
-                case VIDEO:
-                    printTop("Video");
-                    printBottom("press to start");
-                    break;
-
-                case SETTINGS:
-                    printTop("Settings");
-                    printBottom("press to edit");
-                    break;
-            }
+            printTop(_items[current].top);
+            printBottom(_items[current].bottom);
         }
 
         void next()
         {
-            menu++;
-            if (menu > M_LAST)
-                menu = M_FIRST;
-            Serial.println(menu);
+            current++;
+            if (current >= _length)
+                current = 0;
         }
 
         void prev()
         {
-            menu--;
-            if (menu < M_FIRST)
-                menu = M_LAST;
-            Serial.println(menu);
+            current--;
+            if (current < 0)
+                current = _length - 1;
         }
 
     private:
+        MenuItem* _items;
+        int _length;
         String _recentTop;
         String _recentBottom;
         
         void printTop(String text)
         {
-            text = FillWithSpaces(text);
             if (_recentTop != text)
             {
                 lcd.setCursor(0, 0);
@@ -84,7 +70,6 @@ class Menu
 
         void printBottom(String text)
         {
-            text = FillWithSpaces(text);
             if (_recentBottom != text)
             {
                 lcd.setCursor(0, 1);
@@ -92,18 +77,15 @@ class Menu
                 _recentBottom = text;
             }
         }
-
-        String FillWithSpaces(String text)
-        {
-            String res = text;
-            while (res.length() < 16)
-                res += " ";
-
-            return res;
-        }
 };
 
-Menu menu;
+MenuItem topItems[] = {
+    {"Automatic       ", "press to start  "},
+    {"Manual          ", "press to start  "},
+    {"Nonstop         ", "press to start  "},
+    {"Video           ", "press to start  "},
+    {"Settings        ", "press to edit   "}};
+Menu topMenu(topItems, 5);
 
 void setup()
 {
@@ -125,9 +107,9 @@ void loop()
     if (enc.turn())
     {
         if (enc.left())
-            menu.prev();
+            topMenu.prev();
         else if (enc.right())
-            menu.next();
+            topMenu.next();
     }
-    menu.display();
+    topMenu.display();
 }
