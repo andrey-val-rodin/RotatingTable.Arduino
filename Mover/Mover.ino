@@ -75,7 +75,7 @@ class Mover
         {
             // Check whether second signal from encoder is 0
             // !!! test in backward direction!
-            if (digitalRead(3) == 0)
+            if (digitalRead(3) == LOW)
                 graduationCount++;
         }
 
@@ -145,7 +145,10 @@ void setup() {
 
 void Handler2()
 {
-  Count2++;
+    if (digitalRead(2) == HIGH)
+        Count2++;
+    else
+        Count2--;
 }
 
 int stepNumber;

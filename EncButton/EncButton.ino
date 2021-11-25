@@ -5,53 +5,6 @@ EncButton<EB_TICK, 4> redButton;
 EncButton<EB_TICK, 7> greenButton;
 EncButton<EB_TICK, 8> yellowButton;
 
-/*
-class Button
-{
-    public:
-        Button(byte pin)
-        {
-            _pin = pin;
-        }
-        
-        void tick()
-        {
-            bool state = digitalRead(_pin);
-            if (state)
-            {
-                if (!_prevState)
-                {
-                    _pressed = true;
-                    _state = true;
-                    _prevState = true;
-                }
-            }
-            else
-            {
-                _state = false;
-                _prevState = false;
-            }
-        }
-        
-        bool press()
-        {
-            bool res = _pressed;
-            _pressed = false;
-            return res;
-        }
-
-    private:
-        byte _pin;
-        bool _prevState = false;
-        bool _state = false;
-        bool _pressed = false;
-};
-
-Button redButton(4);
-Button greenButton(7);
-Button yellowButton(8);
-*/
-
 void setup()
 {
     Serial.begin(9600);
