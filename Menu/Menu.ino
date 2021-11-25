@@ -62,9 +62,12 @@ class Menu
         {
             if (_recentTop != text)
             {
+                _recentTop = text;
+                
+                while (text.length() < 16)
+                    text += " ";
                 lcd.setCursor(0, 0);
                 lcd.print(text);
-                _recentTop = text;
             }
         }
 
@@ -72,19 +75,22 @@ class Menu
         {
             if (_recentBottom != text)
             {
+                _recentBottom = text;
+                
+                while (text.length() < 16)
+                    text += " ";
                 lcd.setCursor(0, 1);
                 lcd.print(text);
-                _recentBottom = text;
             }
         }
 };
 
 MenuItem topItems[] = {
-    {"Automatic       ", "press to start  "},
-    {"Manual          ", "press to start  "},
-    {"Nonstop         ", "press to start  "},
-    {"Video           ", "press to start  "},
-    {"Settings        ", "press to edit   "}};
+    {"Automatic", "press to start"},
+    {"Manual",    "press to start"},
+    {"Nonstop",   "press to start"},
+    {"Video",     "press to start"},
+    {"Settings",  "press to edit"}};
 Menu topMenu(topItems, 5);
 
 void setup()
