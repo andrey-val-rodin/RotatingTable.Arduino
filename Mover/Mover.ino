@@ -1,6 +1,7 @@
 #include <LiquidCrystal_I2C.h>
 
 #define RED_BUTTON 4
+#define MIN_PWM 10;
 
 volatile int graduationCount;
 volatile int Count2;
@@ -11,7 +12,7 @@ class Mover
         // number of graduations for acceleration and deceleration
         // from min to max PWM and vice versa
         // Shouldn't be less than 20
-        int accelerationLength = 20;
+        int accelerationLength = 100;
 
         void attach()
         {
@@ -60,7 +61,7 @@ class Mover
         }
 
     private:
-        const int _minSpeed = 10;
+        const int _minSpeed = MIN_PWM;
         const int _maxSpeed = 255;
         const int pins[2] = {6, 7};
 
@@ -155,7 +156,7 @@ int stepNumber;
 int oldCommonCount;
 
 void loop() {
-  const int stepCount = 18; // 4, 8, 18, 20, 24, 30, 36, 45, 60, 72, 90, 120
+  const int stepCount = 4; // 4, 8, 18, 20, 24, 30, 36, 45, 60, 72, 90, 120
   const int graduations = 1080 / stepCount;
 
   bool newButtonState = digitalRead(RED_BUTTON);
