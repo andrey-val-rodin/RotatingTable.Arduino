@@ -6,6 +6,8 @@
 #define MOTOR2 7
 #define MOTOR_ENC1 2
 #define MOTOR_ENC2 3
+#define CAMERA 9
+#define SHUTTER 10
 #define MIN_PWM 10
 #define MAX_PWM 255
 #define GRADUATIONS 1080
@@ -107,7 +109,7 @@ class Settings
 
         static int16_t verifyExposure(int16_t value)
         {
-            return 0 <= value && value <= 500 && value % 100 == 0
+            return 100 <= value && value <= 500 && value % 100 == 0
                 ? value
                 : 100; // use default
         }
@@ -314,7 +316,7 @@ class SettingEditor
                     Settings::setDelay(_menu->current * 100);
                     break;
                 case 3: // Exposure
-                    Settings::setExposure(_menu->current * 100);
+                    Settings::setExposure((_menu->current + 1) * 100);
                     break;
             }
         }
@@ -339,8 +341,8 @@ class SettingEditor
                     _menu->current = Settings::getDelay() / 100;
                     break;
                 case 3: // Exposure
-                    _menu->setItems(6, 100, 0);
-                    _menu->current = Settings::getExposure() / 100;
+                    _menu->setItems(5, 100, 1);
+                    _menu->current = Settings::getExposure() / 100 - 1;
                     break;
             }
         }
@@ -566,33 +568,73 @@ class Mover
 Mover mover;
 
 char stepNumber = 0;
+unsigned long delayTimer = 0;
+unsigned long exposureTimer = 0;
+bool isRunning = false;
 class Runner
 {
     public:
+        enum State
+        {
+            Delay,
+            Exposure,
+            Other
+        };
+        
         static void runAutomatic()
         {
-            mover.tick();
+            static State currentState;
             
             if (enc.press())
             {
-                mover.stop();
                 finalize();
                 return;
             }
-            
-            if (mover.isStopped())
+
+            if (!mover.isStopped())
+                return;
+
+            char stepCount = Settings::getSteps();
+            int stepGraduations = GRADUATIONS / stepCount;
+            if (!isRunning)
             {
-                char stepCount = Settings::getSteps();
-                int stepGraduations = GRADUATIONS / stepCount;
-                char strBuf[17];
+                // Starting
+                digitalWrite(CAMERA, LOW); // prepare camera
+                isRunning = true;
+                currentState = Other;
+                stepNumber++;
+                displaySteps();
+                mover.move(stepGraduations, true);
+                return;
+            }
+
+            if (currentState == Other)
+            {
+                delayTimer = millis(); // set timer
+                currentState = Delay;
+            }
+
+            if (currentState == Delay && millis() - delayTimer < Settings::getDelay())
+                return;
+
+            if (currentState == Delay)
+            {
+                digitalWrite(SHUTTER, LOW); // make photo
+                exposureTimer = millis(); // set timer
+                currentState = Exposure;
+            }
+
+            if (currentState == Exposure && millis() - exposureTimer >= Settings::getExposure())
+            {
+                digitalWrite(SHUTTER, HIGH); // release shutter
+                currentState = Other;
                 
-                sprintf(strBuf, "step %d (%d)", stepNumber + 1, stepCount);
-                selector.menu.display("Automatic...", strBuf);
-        
+                // Move next or stop
                 if (stepNumber < stepCount)
                 {
-                    mover.move(stepGraduations, true);
                     stepNumber++;
+                    displaySteps();
+                    mover.move(stepGraduations, true);
                 }
                 else
                 {
@@ -604,14 +646,30 @@ class Runner
     private:
         static void finalize()
         {
+            isRunning = false;
+            mover.stop();
             stepNumber = 0;
+            digitalWrite(SHUTTER, HIGH); // release shutter
+            digitalWrite(CAMERA, HIGH); // release camera
             selector.hold = false; // release selector
+        }
+
+        static void displaySteps()
+        {
+            char strBuf[17];
+            sprintf(strBuf, "step %d (%d)", stepNumber, Settings::getSteps());
+            selector.menu.display("Automatic...", strBuf);
         }
 };
 Runner runner;
 
 void setup()
 {
+    pinMode(CAMERA, OUTPUT);
+    pinMode(SHUTTER, OUTPUT);
+    digitalWrite(SHUTTER, HIGH); // release shutter
+    digitalWrite(CAMERA, HIGH); // release camera
+    
     lcd.init();
     lcd.begin(16, 2);
     lcd.clear();
@@ -635,4 +693,5 @@ void loop()
     photoButton.tick();
     nextButton.tick();
     selector.tick();
+    mover.tick();
 }
