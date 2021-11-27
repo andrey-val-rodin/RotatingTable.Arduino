@@ -2,12 +2,18 @@
 #include <LiquidCrystal_I2C.h>
 #include <avr/eeprom.h>
 
-#define MIN_PWM 10;
+#define MOTOR1 6
+#define MOTOR2 7
+#define MOTOR_ENC1 2
+#define MOTOR_ENC2 3
+#define MIN_PWM 10
+#define MAX_PWM 255
+#define GRADUATIONS 1080
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-EncButton<EB_TICK, 12, 13, 11> enc;
-EncButton<EB_TICK, 7> photoButton;
-EncButton<EB_TICK, 4> nextButton;
+EncButton<EB_TICK, 12, 13, 11> enc; // pins 11, 12, 13
+EncButton<EB_TICK, 7> photoButton;  // pin 7
+EncButton<EB_TICK, 4> nextButton;   // pin 4
 
 char EEMEM stepsOffset;
 char EEMEM accelerationOffset;
@@ -84,7 +90,7 @@ class Settings
 
         static int16_t verifyDelay(int16_t value)
         {
-            return 100 <= value && value <= 5000 && value % 100 == 0
+            return 0 <= value && value <= 5000 && value % 100 == 0
                 ? value
                 : 100; // use default
         }
@@ -101,7 +107,7 @@ class Settings
 
         static int16_t verifyExposure(int16_t value)
         {
-            return 100 <= value && value <= 500 && value % 100 == 0
+            return 0 <= value && value <= 500 && value % 100 == 0
                 ? value
                 : 100; // use default
         }
@@ -166,7 +172,7 @@ class Menu
             current = 0;
         }
 
-        void setItems(char upperBound, char multiplier, char offset = 1)
+        void setItems(char upperBound, char multiplier, char offset)
         {
             _length = upperBound;
             _offset = offset;
@@ -305,10 +311,10 @@ class SettingEditor
                     Settings::setAcceleration(_menu->current + 1);
                     break;
                 case 2: // Delay
-                    Settings::setDelay((_menu->current + 1) * 100);
+                    Settings::setDelay(_menu->current * 100);
                     break;
                 case 3: // Exposure
-                    Settings::setExposure((_menu->current + 1) * 100);
+                    Settings::setExposure(_menu->current * 100);
                     break;
             }
         }
@@ -325,16 +331,16 @@ class SettingEditor
                     _menu->current = FindInSteps(Settings::getSteps());
                     break;
                 case 1: // Acceleration
-                    _menu->setItems(10, 1);
+                    _menu->setItems(10, 1, 1);
                     _menu->current = Settings::getAcceleration() - 1;
                     break;
                 case 2: // Delay
-                    _menu->setItems(50, 100);
-                    _menu->current = Settings::getDelay() / 100 - 1;
+                    _menu->setItems(51, 100, 0);
+                    _menu->current = Settings::getDelay() / 100;
                     break;
                 case 3: // Exposure
-                    _menu->setItems(5, 100);
-                    _menu->current = Settings::getExposure() / 100 - 1;
+                    _menu->setItems(6, 100, 0);
+                    _menu->current = Settings::getExposure() / 100;
                     break;
             }
         }
@@ -367,6 +373,12 @@ class Selector
 
         void tick()
         {
+            if (hold)
+            {
+                _callbacks[menu.current]();
+                return;
+            }
+            
             menu.display();
             
             if (enc.press())
@@ -407,7 +419,6 @@ class Selector
                 if (menu.current < 4)
                 {
                     hold = true;
-                    _callbacks[menu.current]();
                 }
                 else // settings
                 {
@@ -449,25 +460,14 @@ class Mover
         // number of graduations for acceleration and deceleration
         // from min to max PWM and vice versa
         // Shouldn't be less than 20
-        int accelerationLength = Settings::getNativeAcceleration();
-
-        void attach()
-        {
-            attachInterrupt(0, encoderHandler, RISING);
-        }
+        int accelerationLength;
 
         void tick()
         {
             if (isStopped())
                 return;
 
-            if (graduationCount >= _graduations)
-            {
-                stop();
-                return;
-            }
-
-            makeStep();
+            _tick();
         }
 
         void move(int graduations, bool forward)
@@ -476,7 +476,6 @@ class Mover
                 return;
 
             initialize(graduations, forward);
-            makeStep();
         }
 
         void stop()
@@ -484,7 +483,7 @@ class Mover
             analogWrite(pins[0], 0);
             analogWrite(pins[1], 0);
             _isRunning = false;
-            _isInitialized = false;
+            detach();
         }
 
         bool isRunning()
@@ -499,11 +498,10 @@ class Mover
 
     private:
         const int _minSpeed = MIN_PWM;
-        const int _maxSpeed = 255;
-        const int pins[2] = {6, 7};
+        const int _maxSpeed = MAX_PWM;
+        const int pins[2] = {MOTOR1, MOTOR2};
 
         bool _isRunning = false;
-        bool _isInitialized = false;
         int _graduations;
         byte _pinIndex;
         unsigned long _oldTime;
@@ -513,8 +511,20 @@ class Mover
         {
             // Check whether second signal from encoder is 0
             // !!! test in backward direction!
-            if (digitalRead(3) == LOW)
+            if (digitalRead(MOTOR_ENC2) == LOW)
                 graduationCount++;
+            else
+                graduationCount--;
+        }
+
+        void attach()
+        {
+            attachInterrupt(digitalPinToInterrupt(MOTOR_ENC1), encoderHandler, RISING);
+        }
+
+        void detach()
+        {
+            detachInterrupt(digitalPinToInterrupt(MOTOR_ENC1));
         }
 
         void initialize(int graduations, bool forward)
@@ -523,15 +533,12 @@ class Mover
             _graduations = graduations;
             _pinIndex = forward ? 0 : 1;
             _currentSpeed = _minSpeed;
-            _isInitialized = true;
             _isRunning = true;
+            attach();
         }
 
-        void makeStep()
+        void _tick()
         {
-            if (!_isInitialized)
-              return;
-
             if (graduationCount >= _graduations)
             {
                 stop();
@@ -540,15 +547,12 @@ class Mover
 
             float x;
             if (graduationCount < _graduations / 2)
-            {
                 x = graduationCount;
-            }
             else
-            {
                 x = _graduations - graduationCount - 1;
-            }
 
             // Use linear function to accelerate/decelerate
+            accelerationLength = Settings::getNativeAcceleration();
             _currentSpeed = _minSpeed + x * (_maxSpeed - _minSpeed) / accelerationLength;
             // Validate
             if (_currentSpeed > _maxSpeed)
@@ -561,6 +565,51 @@ class Mover
 };
 Mover mover;
 
+char stepNumber = 0;
+class Runner
+{
+    public:
+        static void runAutomatic()
+        {
+            mover.tick();
+            
+            if (enc.press())
+            {
+                mover.stop();
+                finalize();
+                return;
+            }
+            
+            if (mover.isStopped())
+            {
+                char stepCount = Settings::getSteps();
+                int stepGraduations = GRADUATIONS / stepCount;
+                char strBuf[17];
+                
+                sprintf(strBuf, "step %d (%d)", stepNumber + 1, stepCount);
+                selector.menu.display("Automatic...", strBuf);
+        
+                if (stepNumber < stepCount)
+                {
+                    mover.move(stepGraduations, true);
+                    stepNumber++;
+                }
+                else
+                {
+                    finalize();
+                }
+            }
+        }
+        
+    private:
+        static void finalize()
+        {
+            stepNumber = 0;
+            selector.hold = false; // release selector
+        }
+};
+Runner runner;
+
 void setup()
 {
     lcd.init();
@@ -572,7 +621,7 @@ void setup()
     nextButton.setButtonLevel(HIGH);
 
     selector.initialize(
-        [](){selector.menu.display("auto...", ""); delay(3000); selector.hold = false; },
+        runner.runAutomatic,
         [](){selector.menu.display("manual...", ""); delay(3000); selector.hold = false; },
         [](){selector.menu.display("nonstop...", ""); delay(3000); selector.hold = false; },
         [](){selector.menu.display("video...", ""); delay(3000); selector.hold = false; });
@@ -586,5 +635,4 @@ void loop()
     photoButton.tick();
     nextButton.tick();
     selector.tick();
-    mover.tick();
 }
