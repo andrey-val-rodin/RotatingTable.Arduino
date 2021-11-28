@@ -23,6 +23,7 @@ int16_t EEMEM delayOffset;
 int16_t EEMEM exposureOffset;
 char EEMEM videoSpeedOffset;
 char EEMEM nonstopSpeedOffset;
+char EEMEM menuIndexOffset;
 
 const char stepsLength = 12;
 const char steps[stepsLength] = { 4, 8, 18, 20, 24, 30, 36, 45, 60, 72, 90, 120 };
@@ -36,7 +37,65 @@ char FindInSteps(char numberOfSteps)
 
     return -1;
 }
+
+class Runner
+{
+    public:
+        static void runAutomatic();
+        static void runManual();
+        static void runNonstop();
+        static void runVideo();
+        static void runRotate();
         
+    private:
+        enum State
+        {
+            Delay,
+            Exposure,
+            Other
+        };
+        
+        static void finalize();
+        static void incrementStep();
+        static void displaySteps();
+};
+Runner runner;
+
+struct MenuItem
+{
+    String top;
+    String bottom;
+};
+
+typedef void (*callback_t)();
+struct MenuItemsDef
+{
+    static const char topItemsLength = 6;
+
+    MenuItem topItems[topItemsLength] = {
+        {"Automatic",   "press to start"},
+        {"Manual",      "press to start"},
+        {"Nonstop",     "press to start"},
+        {"Video",       "press to start"},
+        {"Rotate 90",   "press to rotate"},
+        {"Settings",    "press to edit"}};
+
+    callback_t handlers[topItemsLength - 1] = {
+        Runner::runAutomatic,
+        Runner::runManual,
+        Runner::runNonstop,
+        Runner::runVideo,
+        Runner::runRotate
+    };
+
+    static const char settingsItemsLength = 4;
+    MenuItem settingsItems[settingsItemsLength] = {
+        {"Steps",        ""},
+        {"Acceleration", ""},
+        {"Delay",        ""},
+        {"Exposure",     ""}};
+};
+
 class Settings
 {
     public:
@@ -131,7 +190,7 @@ class Settings
                 : 100; // use default
         }
 
-       static void setVideoSpeed(char value)
+        static void setVideoSpeed(char value)
         {
             eeprom_update_byte(&videoSpeedOffset, value);
         }
@@ -145,12 +204,23 @@ class Settings
         {
             eeprom_update_byte(&nonstopSpeedOffset, value);
         }
-};
 
-struct MenuItem
-{
-    String top;
-    String bottom;
+        static char getMenuIndex()
+        {
+            return verifyMenuIndex(eeprom_read_byte(&menuIndexOffset));
+        }
+
+        static char verifyMenuIndex(char value)
+        {
+            return 0 <= value && value <= MenuItemsDef::topItemsLength
+                ? value
+                : 0; // use default
+        }
+
+        static void setMenuIndex(char value)
+        {
+            eeprom_update_byte(&menuIndexOffset, value);
+        }
 };
 
 class Menu
@@ -163,7 +233,7 @@ class Menu
             _items = items;
             _length = length;
             _mode = MenuItems;
-            current = 0;
+            current = Settings::getMenuIndex();
         }
 
         void setItems(const char* items, char length)
@@ -348,113 +418,6 @@ class SettingEditor
         }
 };
 
-typedef void (*callback_t)();
-class Selector
-{
-    public:
-        Menu menu;
-        bool hold = false;
-
-        Selector() : _editor(&menu)
-        {
-        }
-
-        void initialize(
-            callback_t automatic,
-            callback_t manual,
-            callback_t nonstop,
-            callback_t video)
-        {
-            _callbacks[0] = automatic;
-            _callbacks[1] = manual;
-            _callbacks[2] = nonstop;
-            _callbacks[3] = video;
-
-            menu.setItems(_topItems, _topItemsLength);
-        }
-
-        void tick()
-        {
-            if (hold)
-            {
-                _callbacks[menu.current]();
-                return;
-            }
-            
-            menu.display();
-            
-            if (enc.press())
-                press();
-            else if (enc.turn())
-            {
-                if (enc.left() && !hold)
-                    menu.prev();
-                else if (enc.right() && !hold)
-                    menu.next();
-            }
-        }
-        
-    private:
-        char _level = 0;
-        SettingEditor _editor;
-        callback_t _callbacks[4];
-
-        static const char _topItemsLength = 5;
-        MenuItem _topItems[_topItemsLength] = {
-            {"Automatic", "press to start"},
-            {"Manual",    "press to start"},
-            {"Nonstop",   "press to start"},
-            {"Video",     "press to start"},
-            {"Settings",  "press to edit"}};
-
-        static const char _settingsItemsLength = 4;
-        MenuItem _settingsItems[_settingsItemsLength] = {
-            {"Steps",        ""},
-            {"Acceleration", ""},
-            {"Delay",        ""},
-            {"Exposure",     ""}};
-        
-        void press()
-        {
-            if (_level == 0) // top menu
-            {
-                if (menu.current < 4)
-                {
-                    hold = true;
-                }
-                else // settings
-                {
-                    updateSettings();
-                    menu.setItems(_settingsItems, _settingsItemsLength);
-                    menu.display();
-                    _level = 1;
-                }
-            }
-            else if (_level == 1) // settings menu
-            {
-                _editor.edit(menu.current);
-                _level = 2;
-            }
-            else
-            {
-                // Update setting
-                _editor.update();
-                menu.setItems(_topItems, _topItemsLength);
-                menu.display();
-                _level = 0;
-            }
-        }
-
-        void updateSettings()
-        {
-            _settingsItems[0].bottom = String(Settings::getSteps(), DEC);
-            _settingsItems[1].bottom = String(Settings::getAcceleration(), DEC);
-            _settingsItems[2].bottom = String(Settings::getDelay(), DEC);
-            _settingsItems[3].bottom = String(Settings::getExposure(), DEC);
-        }
-};
-Selector selector;
-
 volatile int graduationCount;
 class Mover
 {
@@ -472,12 +435,12 @@ class Mover
             _tick();
         }
 
-        void move(int graduations, bool forward)
+        void move(int graduations)
         {
             if (isRunning())
                 return;
 
-            initialize(graduations, forward);
+            initialize(graduations);
         }
 
         void stop()
@@ -505,15 +468,21 @@ class Mover
 
         bool _isRunning = false;
         int _graduations;
-        byte _pinIndex;
+        bool _forward;
         unsigned long _oldTime;
         int _currentSpeed;
 
-        static void encoderHandler()
+        static void forwardHandler()
         {
-            // Check whether second signal from encoder is 0
-            // !!! test in backward direction!
             if (digitalRead(MOTOR_ENC2) == LOW)
+                graduationCount++;
+            else
+                graduationCount--;
+        }
+
+        static void backwardHandler()
+        {
+            if (digitalRead(MOTOR_ENC2) == HIGH)
                 graduationCount++;
             else
                 graduationCount--;
@@ -521,7 +490,7 @@ class Mover
 
         void attach()
         {
-            attachInterrupt(digitalPinToInterrupt(MOTOR_ENC1), encoderHandler, RISING);
+            attachInterrupt(digitalPinToInterrupt(MOTOR_ENC1), _forward ? forwardHandler : backwardHandler, RISING);
         }
 
         void detach()
@@ -529,11 +498,11 @@ class Mover
             detachInterrupt(digitalPinToInterrupt(MOTOR_ENC1));
         }
 
-        void initialize(int graduations, bool forward)
+        void initialize(int graduations)
         {
             graduationCount = 0;
-            _graduations = graduations;
-            _pinIndex = forward ? 0 : 1;
+            _graduations = abs(graduations);
+            _forward = graduations > 0;
             _currentSpeed = _minSpeed;
             _isRunning = true;
             attach();
@@ -562,110 +531,224 @@ class Mover
             else if (_currentSpeed < _minSpeed)
                 _currentSpeed = _minSpeed;            
 
-            analogWrite(pins[_pinIndex], _currentSpeed);
+            analogWrite(pins[_forward? 0 : 1], _currentSpeed);
         }
 };
 Mover mover;
+
+class Selector
+{
+    public:
+        Menu menu;
+        bool hold = false;
+
+        Selector() : _editor(&menu)
+        {
+            menu.setItems(_menuDef.topItems, _menuDef.topItemsLength);
+        }
+
+        void tick()
+        {
+            if (hold)
+            {
+                _menuDef.handlers[menu.current]();
+                return;
+            }
+            
+            menu.display();
+            
+            if (enc.press())
+                press();
+            else if (enc.turn())
+            {
+                if (enc.left())
+                    menu.prev();
+                else if (enc.right())
+                    menu.next();
+            }
+        }
+        
+    private:
+        MenuItemsDef _menuDef;
+        char _level = 0;
+        SettingEditor _editor;
+
+        void press()
+        {
+            if (_level == 0) // top menu
+            {
+                if (menu.current < _menuDef.topItemsLength - 1)
+                {
+                    Settings::setMenuIndex(menu.current);
+                    hold = true;
+                }
+                else // settings
+                {
+                    updateSettings();
+                    menu.setItems(_menuDef.settingsItems, _menuDef.settingsItemsLength);
+                    menu.display();
+                    _level = 1;
+                }
+            }
+            else if (_level == 1) // settings menu
+            {
+                _editor.edit(menu.current);
+                _level = 2;
+            }
+            else
+            {
+                // Update setting
+                _editor.update();
+                menu.setItems(_menuDef.topItems, _menuDef.topItemsLength);
+                menu.display();
+                _level = 0;
+            }
+        }
+
+        void updateSettings()
+        {
+            _menuDef.settingsItems[0].bottom = String(Settings::getSteps(), DEC);
+            _menuDef.settingsItems[1].bottom = String(Settings::getAcceleration(), DEC);
+            _menuDef.settingsItems[2].bottom = String(Settings::getDelay(), DEC);
+            _menuDef.settingsItems[3].bottom = String(Settings::getExposure(), DEC);
+        }
+};
+Selector selector;
 
 char stepNumber = 0;
 unsigned long delayTimer = 0;
 unsigned long exposureTimer = 0;
 bool isRunning = false;
-class Runner
+void Runner::runAutomatic()
 {
-    public:
-        enum State
-        {
-            Delay,
-            Exposure,
-            Other
-        };
+    static State currentState;
+    
+    if (enc.press())
+    {
+        finalize();
+        return;
+    }
+
+    if (!mover.isStopped())
+        return;
+
+    char stepCount = Settings::getSteps();
+    int stepGraduations = GRADUATIONS / stepCount;
+    if (!isRunning)
+    {
+        // Starting
+        digitalWrite(CAMERA, LOW); // prepare camera
+        isRunning = true;
+        currentState = Other;
+        incrementStep();
+        mover.move(stepGraduations);
+        return;
+    }
+
+    if (currentState == Other)
+    {
+        delayTimer = millis(); // set timer
+        currentState = Delay;
+    }
+
+    if (currentState == Delay && millis() - delayTimer < Settings::getDelay())
+        return;
+
+    if (currentState == Delay)
+    {
+        digitalWrite(SHUTTER, LOW); // make photo
+        exposureTimer = millis(); // set timer
+        currentState = Exposure;
+    }
+
+    if (currentState == Exposure && millis() - exposureTimer >= Settings::getExposure())
+    {
+        digitalWrite(SHUTTER, HIGH); // release shutter
+        currentState = Other;
         
-        static void runAutomatic()
+        // Move next or stop
+        if (stepNumber < stepCount)
         {
-            static State currentState;
-            
-            if (enc.press())
-            {
-                finalize();
-                return;
-            }
-
-            if (!mover.isStopped())
-                return;
-
-            char stepCount = Settings::getSteps();
-            int stepGraduations = GRADUATIONS / stepCount;
-            if (!isRunning)
-            {
-                // Starting
-                digitalWrite(CAMERA, LOW); // prepare camera
-                isRunning = true;
-                currentState = Other;
-                incrementStep();
-                mover.move(stepGraduations, true);
-                return;
-            }
-
-            if (currentState == Other)
-            {
-                delayTimer = millis(); // set timer
-                currentState = Delay;
-            }
-
-            if (currentState == Delay && millis() - delayTimer < Settings::getDelay())
-                return;
-
-            if (currentState == Delay)
-            {
-                digitalWrite(SHUTTER, LOW); // make photo
-                exposureTimer = millis(); // set timer
-                currentState = Exposure;
-            }
-
-            if (currentState == Exposure && millis() - exposureTimer >= Settings::getExposure())
-            {
-                digitalWrite(SHUTTER, HIGH); // release shutter
-                currentState = Other;
-                
-                // Move next or stop
-                if (stepNumber < stepCount)
-                {
-                    incrementStep();
-                    mover.move(stepGraduations, true);
-                }
-                else
-                {
-                    finalize();
-                }
-            }
+            incrementStep();
+            mover.move(stepGraduations);
         }
-        
-    private:
-        static void finalize()
+        else
         {
-            isRunning = false;
-            mover.stop();
-            stepNumber = 0;
-            digitalWrite(SHUTTER, HIGH); // release shutter
-            digitalWrite(CAMERA, HIGH); // release camera
-            selector.hold = false; // release selector
+            finalize();
         }
+    }
+}
 
-        static void incrementStep()
-        {
-            stepNumber++;
-            displaySteps();
-        }
+void Runner::runManual()
+{
+    selector.menu.display("manual...", "");
+    delay(3000);
+    selector.hold = false;
+}
 
-        static void displaySteps()
-        {
-            char strBuf[17];
-            sprintf(strBuf, "step %d (%d)", stepNumber, Settings::getSteps());
-            selector.menu.display("Automatic...", strBuf);
-        }
-};
-Runner runner;
+void Runner::runNonstop()
+{
+    selector.menu.display("nonstop...", "");
+    delay(3000);
+    selector.hold = false;
+}
+
+void Runner::runVideo()
+{
+    selector.menu.display("video...", "");
+    delay(3000);
+    selector.hold = false;
+}
+
+void Runner::runRotate()
+{
+    if (!isRunning)
+    {
+        selector.menu.display("Rotate...", "<- ->");
+        isRunning = true;
+    }
+    
+    if (enc.press())
+    {
+        finalize();
+        return;
+    }
+
+    if (!mover.isStopped())
+    {
+        enc.resetState();
+        return;
+    }
+
+    if (enc.left())
+        mover.move(-GRADUATIONS / 4);
+    else if (enc.right())
+        mover.move(GRADUATIONS / 4);
+}
+
+void Runner::finalize()
+{
+    isRunning = false;
+    mover.stop();
+    stepNumber = 0;
+    digitalWrite(SHUTTER, HIGH); // release shutter
+    digitalWrite(CAMERA, HIGH); // release camera
+    selector.hold = false; // release selector
+    enc.resetState(); // // reset encoder
+}
+
+void Runner::incrementStep()
+{
+    stepNumber++;
+    displaySteps();
+}
+
+void Runner::displaySteps()
+{
+    char strBuf[17];
+    sprintf(strBuf, "step %d (%d)", stepNumber, Settings::getSteps());
+    selector.menu.display("Automatic...", strBuf);
+}
 
 void setup()
 {
@@ -685,12 +768,6 @@ void setup()
 
     photoButton.setButtonLevel(HIGH);
     nextButton.setButtonLevel(HIGH);
-
-    selector.initialize(
-        runner.runAutomatic,
-        [](){selector.menu.display("manual...", ""); delay(3000); selector.hold = false; },
-        [](){selector.menu.display("nonstop...", ""); delay(3000); selector.hold = false; },
-        [](){selector.menu.display("video...", ""); delay(3000); selector.hold = false; });
 
     Serial.begin(9600);
 }
