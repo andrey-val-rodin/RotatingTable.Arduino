@@ -602,8 +602,7 @@ class Runner
                 digitalWrite(CAMERA, LOW); // prepare camera
                 isRunning = true;
                 currentState = Other;
-                stepNumber++;
-                displaySteps();
+                incrementStep();
                 mover.move(stepGraduations, true);
                 return;
             }
@@ -632,8 +631,7 @@ class Runner
                 // Move next or stop
                 if (stepNumber < stepCount)
                 {
-                    stepNumber++;
-                    displaySteps();
+                    incrementStep();
                     mover.move(stepGraduations, true);
                 }
                 else
@@ -652,6 +650,12 @@ class Runner
             digitalWrite(SHUTTER, HIGH); // release shutter
             digitalWrite(CAMERA, HIGH); // release camera
             selector.hold = false; // release selector
+        }
+
+        static void incrementStep()
+        {
+            stepNumber++;
+            displaySteps();
         }
 
         static void displaySteps()
