@@ -125,8 +125,7 @@ class Settings
         static char getNativeAcceleration()
         {
             char result = getAcceleration();
-            // reverse
-            result = abs(result - 11);
+            result = abs(result - 11); // reverse
             result *= 10;
             result += 10;
             return result;
@@ -233,7 +232,7 @@ class Menu
             _items = items;
             _length = length;
             _mode = MenuItems;
-            current = Settings::getMenuIndex();
+            current = 0;
         }
 
         void setItems(const char* items, char length)
@@ -545,6 +544,7 @@ class Selector
         Selector() : _editor(&menu)
         {
             menu.setItems(_menuDef.topItems, _menuDef.topItemsLength);
+            menu.current = Settings::getMenuIndex();
         }
 
         void tick()
