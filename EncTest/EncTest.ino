@@ -39,10 +39,16 @@ void loop() {
         count2 = 0;
     }
 
-    if (oldCount != count || oldCount2 != count2)
+    // critical section
+    noInterrupts();
+    int localCount = count;
+    int localCount2 = count2;
+    interrupts();
+    
+    if (oldCount != localCount || oldCount2 != localCount2)
     {
-        Serial.println("0: " + String(count) + "   1: " + String(count2));
-        oldCount = count;
-        oldCount2 = count2;
+        Serial.println("0: " + String(localCount) + "   1: " + String(localCount2));
+        oldCount = localCount;
+        oldCount2 = localCount2;
     }
 }

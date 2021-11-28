@@ -21,8 +21,8 @@ char EEMEM stepsOffset;
 char EEMEM accelerationOffset;
 int16_t EEMEM delayOffset;
 int16_t EEMEM exposureOffset;
-char EEMEM videoSpeedOffset;
-char EEMEM nonstopSpeedOffset;
+int16_t EEMEM videoSpeedOffset;
+int16_t EEMEM nonstopSpeedOffset;
 char EEMEM menuIndexOffset;
 
 const char stepsLength = 12;
@@ -122,6 +122,9 @@ class Settings
         }
 
         // Converts user-friendly value 1-10 to native value 20-120
+        // Value from 20 to 100 is a number of graduations for acceleration and deceleration
+        // from min to max PWM and vice versa
+        // Shouldn't be less than 20
         static char getNativeAcceleration()
         {
             char result = getAcceleration();
@@ -177,31 +180,31 @@ class Settings
             eeprom_update_word(&exposureOffset, value);
         }
 
-        static char getVideoSpeed()
+        static int16_t getVideoSpeed()
         {
-            return verifySpeed(eeprom_read_byte(&videoSpeedOffset));
+            return verifySpeed(eeprom_read_word(&videoSpeedOffset));
         }
 
-        static char verifySpeed(char value)
+        static int16_t verifySpeed(int16_t value)
         {
             return 1 <= value && value <= 255
                 ? value
                 : 100; // use default
         }
 
-        static void setVideoSpeed(char value)
+        static void setVideoSpeed(int16_t value)
         {
-            eeprom_update_byte(&videoSpeedOffset, value);
+            eeprom_update_word(&videoSpeedOffset, value);
         }
 
-        static char getNonstopSpeed()
+        static int16_t getNonstopSpeed()
         {
-            return verifySpeed(eeprom_read_byte(&nonstopSpeedOffset));
+            return verifySpeed(eeprom_read_word(&nonstopSpeedOffset));
         }
 
-        static void setNonstopSpeed(char value)
+        static void setNonstopSpeed(int16_t value)
         {
-            eeprom_update_byte(&nonstopSpeedOffset, value);
+            eeprom_update_word(&nonstopSpeedOffset, value);
         }
 
         static char getMenuIndex()
@@ -421,55 +424,117 @@ volatile int graduationCount;
 class Mover
 {
     public:
-        // number of graduations for acceleration and deceleration
-        // from min to max PWM and vice versa
-        // Shouldn't be less than 20
-        int accelerationLength;
+        enum State
+        {
+            Stop,
+            Move,
+            RunAcc,
+            Run,
+            RunDec
+        };
+
+        const int minSpeed = MIN_PWM;
+        const int maxSpeed = MAX_PWM;
 
         void tick()
         {
-            if (isStopped())
-                return;
+            switch (_state)
+            {
+                case Move:
+                    tickMove();
+                    break;
+                    
+                case Run:
+                case RunAcc:
+                case RunDec:
+                    tickRun();
+                    break;
+            }
+        }
 
-            _tick();
+        State getState()
+        {
+            return _state;
         }
 
         void move(int graduations)
         {
-            if (isRunning())
+            if (!isStopped())
                 return;
 
-            initialize(graduations);
+            _graduations = abs(graduations);
+            _forward = graduations > 0;
+            _currentSpeed = minSpeed;
+            _state = Move;
+            attach();
+        }
+
+        void run(int speed)
+        {
+            if (!isStopped())
+                return;
+
+            _expectedSpeed = abs(speed);
+            _forward = speed > 0;
+            _currentSpeed = minSpeed;
+            _state = RunAcc;
+            attach();
         }
 
         void stop()
         {
-            analogWrite(pins[0], 0);
-            analogWrite(pins[1], 0);
-            _isRunning = false;
+            analogWrite(MOTOR1, 0);
+            analogWrite(MOTOR2, 0);
+            _state = Stop;
             detach();
         }
 
-        bool isRunning()
+        void softStop(int destinationSteps = -1)
         {
-            return _isRunning;
+            if( _state == Run)
+            {
+                int decelerationLength = Settings::getNativeAcceleration();
+                _softStopPos = getGraduationCount() + decelerationLength;
+                _state = RunDec;
+            }
+            else
+                stop();
         }
 
         bool isStopped()
         {
-            return !isRunning();
+            return _state == Stop;
+        }
+
+        int getCurrentSpeed()
+        {
+            return _currentSpeed;
+        }
+
+        int changeCurrentSpeed(int delta)
+        {
+            _currentSpeed += delta;
+            validateCurrentSpeed();
+            analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
+        }
+
+        int getGraduationCount()
+        {
+            // critical section
+            noInterrupts();
+            int result = graduationCount;
+            interrupts();
+
+            return result;
         }
 
     private:
-        const int _minSpeed = MIN_PWM;
-        const int _maxSpeed = MAX_PWM;
-        const int pins[2] = {MOTOR1, MOTOR2};
-
-        bool _isRunning = false;
+        State _state = Stop;
         int _graduations;
         bool _forward;
-        unsigned long _oldTime;
+        int _expectedSpeed;
         int _currentSpeed;
+        int _softStopPos;
 
         static void forwardHandler()
         {
@@ -489,7 +554,9 @@ class Mover
 
         void attach()
         {
-            attachInterrupt(digitalPinToInterrupt(MOTOR_ENC1), _forward ? forwardHandler : backwardHandler, RISING);
+            graduationCount = 0;
+            attachInterrupt(digitalPinToInterrupt(MOTOR_ENC1),
+                _forward ? forwardHandler : backwardHandler, RISING);
         }
 
         void detach()
@@ -497,40 +564,78 @@ class Mover
             detachInterrupt(digitalPinToInterrupt(MOTOR_ENC1));
         }
 
-        void initialize(int graduations)
+        void tickMove()
         {
-            graduationCount = 0;
-            _graduations = abs(graduations);
-            _forward = graduations > 0;
-            _currentSpeed = _minSpeed;
-            _isRunning = true;
-            attach();
-        }
-
-        void _tick()
-        {
-            if (graduationCount >= _graduations)
+            if (getGraduationCount() >= _graduations)
             {
                 stop();
                 return;
             }
 
             float x;
-            if (graduationCount < _graduations / 2)
-                x = graduationCount;
+            if (getGraduationCount() < _graduations / 2)
+                accelerate();
             else
-                x = _graduations - graduationCount - 1;
+                decelerate();
 
+            analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
+        }
+
+        void accelerate()
+        {
+            float x = getGraduationCount();
+            linearFunc(x);
+        }
+
+        void decelerate()
+        {
+            float x = _graduations - getGraduationCount() - 1;
+            linearFunc(x);
+        }
+
+        void linearFunc(float x)
+        {
             // Use linear function to accelerate/decelerate
-            accelerationLength = Settings::getNativeAcceleration();
-            _currentSpeed = _minSpeed + x * (_maxSpeed - _minSpeed) / accelerationLength;
-            // Validate
-            if (_currentSpeed > _maxSpeed)
-                _currentSpeed = _maxSpeed;
-            else if (_currentSpeed < _minSpeed)
-                _currentSpeed = _minSpeed;            
+            int accelerationLength = Settings::getNativeAcceleration();
+            _currentSpeed = minSpeed + x * (maxSpeed - minSpeed) / accelerationLength;
+            validateCurrentSpeed();
+        }
 
-            analogWrite(pins[_forward? 0 : 1], _currentSpeed);
+        void tickRun()
+        {
+            switch (_state)
+            {
+                case RunAcc:
+                    accelerate();
+                    if (_currentSpeed >= _expectedSpeed)
+                    {
+                        _currentSpeed = _expectedSpeed;
+                        _state = Run;
+                    }
+
+                    analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
+                    break;
+                    
+                case RunDec:
+                    float x = _softStopPos - getGraduationCount();
+                    linearFunc(x);
+                    if (_currentSpeed <= minSpeed)
+                    {
+                        stop();
+                        return;
+                    }
+                    else
+                        analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
+                    break;
+            }
+        }
+
+        void validateCurrentSpeed()
+        {
+            if (_currentSpeed > maxSpeed)
+                _currentSpeed = maxSpeed;
+            else if (_currentSpeed < minSpeed)
+                _currentSpeed = minSpeed;            
         }
 };
 Mover mover;
@@ -695,16 +800,44 @@ void Runner::runNonstop()
 
 void Runner::runVideo()
 {
-    selector.menu.display("video...", "");
-    delay(3000);
-    selector.hold = false;
+    if (!isRunning)
+    {
+        selector.menu.display("Video...", "");
+        mover.run(Settings::getVideoSpeed());
+        isRunning = true;
+    }
+
+    if (mover.isStopped())
+    {
+        isRunning = false;
+        mover.softStop();
+        selector.hold = false;
+    }
+    
+    if (enc.press())
+    {
+        if (mover.getState() == mover.State::RunDec)
+            return;
+            
+        if (mover.getState() == mover.State::Run)
+            Settings::setVideoSpeed(mover.getCurrentSpeed());
+        
+        mover.softStop();
+    }
+    else if (enc.turn())
+    {
+        if (enc.left())
+            mover.changeCurrentSpeed(-5);
+        else if (enc.right())
+            mover.changeCurrentSpeed(5);
+    }
 }
 
 void Runner::runRotate()
 {
     if (!isRunning)
     {
-        selector.menu.display("Rotate...", "<- ->");
+        selector.menu.display("Rotation...", "<--  -->");
         isRunning = true;
     }
     
@@ -734,7 +867,7 @@ void Runner::finalize()
     digitalWrite(SHUTTER, HIGH); // release shutter
     digitalWrite(CAMERA, HIGH); // release camera
     selector.hold = false; // release selector
-    enc.resetState(); // // reset encoder
+    enc.resetState(); // reset encoder
 }
 
 void Runner::incrementStep()
