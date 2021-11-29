@@ -51,6 +51,7 @@ class Runner
         enum State
         {
             Other,
+            Beginning,
             Delay,
             Exposure,
             Move
@@ -742,7 +743,7 @@ class Selector
 };
 Selector selector;
 
-char stepNumber = 0;
+char stepNumber;
 unsigned long delayTimer = 0;
 unsigned long exposureTimer = 0;
 bool isRunning = false;
@@ -765,9 +766,16 @@ void Runner::runAutomatic()
     if (!isRunning)
     {
         // Starting
+        stepNumber = 0;
         digitalWrite(CAMERA, LOW); // prepare camera
-        delay(Settings::getExposure()); // let camera get ready
         isRunning = true;
+        exposureTimer = millis();
+        currentState = Beginning;
+        return;
+    }
+
+    if (currentState == Beginning && millis() - exposureTimer >= Settings::getExposure())
+    {
         stepNumber++;
         display(mode);
         digitalWrite(SHUTTER, LOW); // make first photo
@@ -775,19 +783,18 @@ void Runner::runAutomatic()
         currentState = Exposure;
         return;
     }
-
+    
     if (currentState == Exposure && millis() - exposureTimer >= Settings::getExposure())
     {
         digitalWrite(SHUTTER, HIGH); // release shutter
         currentState = Move;
-        stepNumber++;
         mover.move(stepGraduations);
         return;
     }
 
     if (currentState == Move)
     {
-        if (stepNumber <= stepCount)
+        if (stepNumber < stepCount)
         {
             delayTimer = millis(); // set timer
             currentState = Delay;
@@ -801,6 +808,7 @@ void Runner::runAutomatic()
 
     if (currentState == Delay && millis() - delayTimer >= Settings::getDelay())
     {
+        stepNumber++;
         display(mode);
         digitalWrite(SHUTTER, LOW); // make photo
         exposureTimer = millis();
