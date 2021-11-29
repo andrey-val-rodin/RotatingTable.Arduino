@@ -43,6 +43,8 @@ char FindInSteps(char numberOfSteps)
 class Runner
 {
     public:
+        static const int delta = 5; // value to increment/decrement speed
+        
         static void runAutomatic();
         static void runManual();
         static void runNonstop();
@@ -433,7 +435,7 @@ class SettingEditor
         }
 };
 
-volatile uint16_t graduationCount;
+volatile int graduationCount;
 class Mover
 {
     public:
@@ -445,9 +447,6 @@ class Mover
             Run,
             RunDec
         };
-
-        const int minSpeed = MIN_PWM;
-        const int maxSpeed = MAX_PWM;
 
         void tick()
         {
@@ -470,14 +469,15 @@ class Mover
             return _state;
         }
 
-        void move(int graduations)
+        void move(int graduations, int maxSpeed = MAX_PWM)
         {
             if (!isStopped())
                 return;
 
             _graduations = abs(graduations);
             _forward = graduations > 0;
-            _currentSpeed = minSpeed;
+            _currentSpeed = MIN_PWM;
+            _maxSpeed = maxSpeed;
             _state = Move;
             attach();
         }
@@ -487,9 +487,9 @@ class Mover
             if (!isStopped())
                 return;
 
-            _expectedSpeed = abs(speed);
+            _maxSpeed = abs(speed);
             _forward = speed > 0;
-            _currentSpeed = minSpeed;
+            _currentSpeed = MIN_PWM;
             _state = RunAcc;
             attach();
         }
@@ -508,9 +508,9 @@ class Mover
             {
                 // Calculate stop point
                 float decelerationLength = Settings::getNativeAcceleration();
-                _softStopPos = (_currentSpeed - minSpeed) * decelerationLength /
-                    (maxSpeed - minSpeed);
-                _softStopPos += getCurrentPos();
+                float graduationsToStop = (_currentSpeed - MIN_PWM) * decelerationLength /
+                    (_maxSpeed - MIN_PWM);
+                _graduations = getCurrentPos() + graduationsToStop;
                 _state = RunDec; // deceleration state
             }
             else
@@ -534,19 +534,41 @@ class Mover
             return _currentSpeed;
         }
 
-        void changeCurrentSpeed(int delta)
+        // Returns maximum PWM
+        int getMaxSpeed()
         {
-            _currentSpeed += delta;
-            validateCurrentSpeed();
-            analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
+            return _maxSpeed;
+        }
+
+        void changeSpeed(int delta)
+        {
+            switch (_state)
+            {
+                case Move:
+                    if (_currentSpeed == _maxSpeed)
+                    {
+                        _maxSpeed += delta;
+                        _maxSpeed = validateAbsoluteSpeed(_maxSpeed);
+                        _currentSpeed = _maxSpeed;
+                        analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
+                    }
+                    break;
+                    
+                case Run:
+                    _maxSpeed += delta;
+                    _maxSpeed = validateAbsoluteSpeed(_maxSpeed);
+                    _currentSpeed = _maxSpeed;
+                    analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
+                    break;
+            }
         }
 
         // Returns graduation count passed from starting point
-        uint16_t getCurrentPos()
+        int getCurrentPos()
         {
             // critical section
             noInterrupts();
-            uint16_t result = graduationCount;
+            int result = graduationCount;
             interrupts();
 
             return result;
@@ -554,11 +576,10 @@ class Mover
 
     private:
         State _state = Stop;
-        uint16_t _graduations;
+        int _graduations;
         bool _forward;
-        int _expectedSpeed;
+        int _maxSpeed = MAX_PWM;
         int _currentSpeed;
-        uint16_t _softStopPos;
 
         static void forwardHandler()
         {
@@ -621,8 +642,8 @@ class Mover
         {
             // Use linear function to accelerate/decelerate
             int accelerationLength = Settings::getNativeAcceleration();
-            _currentSpeed = minSpeed + x * (maxSpeed - minSpeed) / accelerationLength;
-            validateCurrentSpeed();
+            _currentSpeed = MIN_PWM + x * (_maxSpeed - MIN_PWM) / accelerationLength;
+            _currentSpeed = validateSpeed(_currentSpeed);
         }
 
         void tickRun()
@@ -631,35 +652,39 @@ class Mover
             {
                 case RunAcc:
                     accelerate();
-                    if (_currentSpeed >= _expectedSpeed)
-                    {
-                        _currentSpeed = _expectedSpeed;
-                        _state = Run;
-                    }
-
                     analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
+                    if (_currentSpeed == _maxSpeed)
+                        _state = Run;
                     break;
                     
                 case RunDec:
-                    float x = _softStopPos - getCurrentPos();
-                    linearFunc(x);
-                    if (_currentSpeed <= minSpeed)
-                    {
+                    decelerate();
+                    if (_currentSpeed <= MIN_PWM)
                         stop();
-                        return;
-                    }
                     else
                         analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
                     break;
             }
         }
 
-        void validateCurrentSpeed()
+        int validateSpeed(int speed)
         {
-            if (_currentSpeed > maxSpeed)
-                _currentSpeed = maxSpeed;
-            else if (_currentSpeed < minSpeed)
-                _currentSpeed = minSpeed;            
+            if (speed > _maxSpeed)
+                speed = _maxSpeed;
+            else if (speed < MIN_PWM)
+                speed = MIN_PWM;
+
+            return speed;
+        }
+        
+        int validateAbsoluteSpeed(int speed)
+        {
+            if (speed > MAX_PWM)
+                speed = MAX_PWM;
+            else if (speed < MIN_PWM)
+                speed = MIN_PWM;
+
+            return speed;
         }
 };
 Mover mover;
@@ -829,12 +854,23 @@ void Runner::runNonstop()
 {
     const String mode = "Nonstop...";
     static State currentState;
-    static uint16_t nextSnapshotPos;
-    
+    static int nextSnapshotPos;
+ 
     if (enc.press())
     {
         finalize();
         return;
+    }
+    else if (enc.turn())
+    {
+        if (enc.left())
+        {
+            mover.changeSpeed(-delta);
+        }
+        else if (enc.right())
+        {
+            mover.changeSpeed(delta);
+        }
     }
 
     char stepCount = Settings::getSteps();
@@ -858,7 +894,7 @@ void Runner::runNonstop()
         nextSnapshotPos = stepGraduations;
         exposureTimer = millis();
         currentState = Exposure;
-        mover.move(GRADUATIONS);
+        mover.move(GRADUATIONS, Settings::getNonstopSpeed());
         return;
     }
 
@@ -886,7 +922,10 @@ void Runner::runNonstop()
     }
 
     if (isRunning && currentState != Beginning && mover.isStopped())
+    {
+        Settings::setNonstopSpeed(mover.getMaxSpeed());
         finalize();
+    }
 }
 
 void Runner::runVideo()
@@ -914,37 +953,38 @@ void Runner::runVideo()
                 return; // tried to stop already
 
             case mover.State::Run:
-                Settings::setVideoSpeed(mover.getCurrentSpeed() * direction);
+                Settings::setVideoSpeed(mover.getMaxSpeed() * direction);
+                
             default:
                 mover.softStop();
         }
     }
-    else if (enc.turn())
+    else if (enc.turn() && mover.getState() == mover.State::Run)
     {
         char direction = mover.isForward() ? 1 : -1;
         if (enc.left())
         {
-            if (direction > 0 && mover.getCurrentSpeed() <= mover.minSpeed)
+            if (direction > 0 && mover.getCurrentSpeed() <= MIN_PWM)
             {
                 // Change direction
                 mover.stop();
-                mover.run(-mover.minSpeed);
+                mover.run(-MIN_PWM);
                 return;
             }
 
-            mover.changeCurrentSpeed(-5 * direction);
+            mover.changeSpeed(-delta * direction);
         }
         else if (enc.right())
         {
-            if (direction < 0 && mover.getCurrentSpeed() <= mover.minSpeed)
+            if (direction < 0 && mover.getCurrentSpeed() <= MIN_PWM)
             {
                 // Change direction
                 mover.stop();
-                mover.run(mover.minSpeed);
+                mover.run(MIN_PWM);
                 return;
             }
 
-            mover.changeCurrentSpeed(5 * direction);
+            mover.changeSpeed(delta * direction);
         }
     }
 }
