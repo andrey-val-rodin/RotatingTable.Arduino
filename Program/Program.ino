@@ -50,14 +50,15 @@ class Runner
     private:
         enum State
         {
+            Other,
             Delay,
             Exposure,
-            Other
+            Move
         };
         
         static void finalize();
         static void incrementStep();
-        static void displaySteps();
+        static void display(String top);
 };
 Runner runner;
 
@@ -725,6 +726,7 @@ class Selector
                 // Update setting
                 _editor.update();
                 menu.setItems(_menuDef.topItems, _menuDef.topItemsLength);
+                menu.current = _menuDef.topItemsLength - 1; // index of Settings
                 menu.display();
                 _level = 0;
             }
@@ -746,6 +748,7 @@ unsigned long exposureTimer = 0;
 bool isRunning = false;
 void Runner::runAutomatic()
 {
+    const String mode = "Automatic...";
     static State currentState;
     
     if (enc.press())
@@ -763,44 +766,45 @@ void Runner::runAutomatic()
     {
         // Starting
         digitalWrite(CAMERA, LOW); // prepare camera
+        delay(Settings::getExposure()); // let camera get ready
         isRunning = true;
-        currentState = Other;
-        incrementStep();
-        mover.move(stepGraduations);
-        return;
-    }
-
-    if (currentState == Other)
-    {
-        delayTimer = millis(); // set timer
-        currentState = Delay;
-    }
-
-    if (currentState == Delay && millis() - delayTimer < Settings::getDelay())
-        return;
-
-    if (currentState == Delay)
-    {
-        digitalWrite(SHUTTER, LOW); // make photo
-        exposureTimer = millis(); // set timer
+        stepNumber++;
+        display(mode);
+        digitalWrite(SHUTTER, LOW); // make first photo
+        exposureTimer = millis();
         currentState = Exposure;
+        return;
     }
 
     if (currentState == Exposure && millis() - exposureTimer >= Settings::getExposure())
     {
         digitalWrite(SHUTTER, HIGH); // release shutter
-        currentState = Other;
-        
-        // Move next or stop
-        if (stepNumber < stepCount)
+        currentState = Move;
+        stepNumber++;
+        mover.move(stepGraduations);
+        return;
+    }
+
+    if (currentState == Move)
+    {
+        if (stepNumber <= stepCount)
         {
-            incrementStep();
-            mover.move(stepGraduations);
+            delayTimer = millis(); // set timer
+            currentState = Delay;
         }
         else
         {
             finalize();
         }
+        return;
+    }
+
+    if (currentState == Delay && millis() - delayTimer >= Settings::getDelay())
+    {
+        display(mode);
+        digitalWrite(SHUTTER, LOW); // make photo
+        exposureTimer = millis();
+        currentState = Exposure;
     }
 }
 
@@ -915,17 +919,11 @@ void Runner::finalize()
     enc.resetState(); // reset encoder
 }
 
-void Runner::incrementStep()
-{
-    stepNumber++;
-    displaySteps();
-}
-
-void Runner::displaySteps()
+void Runner::display(String top)
 {
     char strBuf[17];
-    sprintf(strBuf, "step %d (%d)", stepNumber, Settings::getSteps());
-    selector.menu.display("Automatic...", strBuf);
+    sprintf(strBuf, "snapshot %d (%d)", stepNumber, Settings::getSteps());
+    selector.menu.display(top, strBuf);
 }
 
 void setup()
