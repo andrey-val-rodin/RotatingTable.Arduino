@@ -429,7 +429,7 @@ class SettingEditor
         }
 };
 
-volatile int graduationCount;
+volatile uint16_t graduationCount;
 class Mover
 {
     public:
@@ -530,19 +530,19 @@ class Mover
             return _currentSpeed;
         }
 
-        int changeCurrentSpeed(int delta)
+        void changeCurrentSpeed(int delta)
         {
             _currentSpeed += delta;
             validateCurrentSpeed();
             analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
         }
 
-        // Returns graduation count passed from starting point, can be negative
-        int getCurrentPos()
+        // Returns graduation count passed from starting point
+        uint16_t getCurrentPos()
         {
             // critical section
             noInterrupts();
-            int result = graduationCount;
+            uint16_t result = graduationCount;
             interrupts();
 
             return result;
@@ -550,11 +550,11 @@ class Mover
 
     private:
         State _state = Stop;
-        int _graduations;
+        uint16_t _graduations;
         bool _forward;
         int _expectedSpeed;
         int _currentSpeed;
-        int _softStopPos;
+        uint16_t _softStopPos;
 
         static void forwardHandler()
         {
