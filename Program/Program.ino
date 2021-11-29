@@ -8,6 +8,8 @@
 #define MOTOR_ENC2 3
 #define CAMERA 9
 #define SHUTTER 10
+#define CAMERA_LOW HIGH
+#define CAMERA_HIGH LOW
 #define MIN_PWM 10
 #define MAX_PWM 255
 #define GRADUATIONS 1080
@@ -50,7 +52,7 @@ class Runner
     private:
         enum State
         {
-            Other,
+            None,
             Beginning,
             Delay,
             Exposure,
@@ -767,7 +769,7 @@ void Runner::runAutomatic()
     {
         // Starting
         stepNumber = 0;
-        digitalWrite(CAMERA, LOW); // prepare camera
+        digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
         isRunning = true;
         exposureTimer = millis();
         currentState = Beginning;
@@ -778,7 +780,7 @@ void Runner::runAutomatic()
     {
         stepNumber++;
         display(mode);
-        digitalWrite(SHUTTER, LOW); // make first photo
+        digitalWrite(SHUTTER, CAMERA_HIGH); // make first photo
         exposureTimer = millis();
         currentState = Exposure;
         return;
@@ -786,7 +788,7 @@ void Runner::runAutomatic()
     
     if (currentState == Exposure && millis() - exposureTimer >= Settings::getExposure())
     {
-        digitalWrite(SHUTTER, HIGH); // release shutter
+        digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
         currentState = Move;
         mover.move(stepGraduations);
         return;
@@ -810,7 +812,7 @@ void Runner::runAutomatic()
     {
         stepNumber++;
         display(mode);
-        digitalWrite(SHUTTER, LOW); // make photo
+        digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
         exposureTimer = millis();
         currentState = Exposure;
     }
@@ -825,9 +827,66 @@ void Runner::runManual()
 
 void Runner::runNonstop()
 {
-    selector.menu.display("nonstop...", "");
-    delay(3000);
-    selector.hold = false;
+    const String mode = "Nonstop...";
+    static State currentState;
+    static uint16_t nextSnapshotPos;
+    
+    if (enc.press())
+    {
+        finalize();
+        return;
+    }
+
+    char stepCount = Settings::getSteps();
+    int stepGraduations = GRADUATIONS / stepCount;
+    if (!isRunning)
+    {
+        // Starting
+        stepNumber = 0;
+        digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
+        isRunning = true;
+        exposureTimer = millis();
+        currentState = Beginning;
+        return;
+    }
+
+    if (currentState == Beginning && millis() - exposureTimer >= Settings::getExposure())
+    {
+        stepNumber++;
+        display(mode);
+        digitalWrite(SHUTTER, CAMERA_HIGH); // make first photo
+        nextSnapshotPos = stepGraduations;
+        exposureTimer = millis();
+        currentState = Exposure;
+        mover.move(GRADUATIONS);
+        return;
+    }
+
+    if (currentState == Exposure && millis() - exposureTimer >= 50)
+    {
+        digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
+        currentState = Move;
+    }
+
+    if (currentState == Move && mover.getCurrentPos() >= nextSnapshotPos)
+    {
+        nextSnapshotPos += stepGraduations;
+        stepNumber++;
+        if (stepNumber > stepCount)
+        {
+            currentState = None;
+        }
+        else
+        {
+            display(mode);
+            digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
+            exposureTimer = millis();
+            currentState = Exposure;
+        }
+    }
+
+    if (isRunning && currentState != Beginning && mover.isStopped())
+        finalize();
 }
 
 void Runner::runVideo()
@@ -921,8 +980,8 @@ void Runner::finalize()
     isRunning = false;
     mover.stop();
     stepNumber = 0;
-    digitalWrite(SHUTTER, HIGH); // release shutter
-    digitalWrite(CAMERA, HIGH); // release camera
+    digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
+    digitalWrite(CAMERA, CAMERA_LOW); // release camera
     selector.hold = false; // release selector
     enc.resetState(); // reset encoder
 }
@@ -942,8 +1001,8 @@ void setup()
     pinMode(MOTOR2, OUTPUT);
     pinMode(CAMERA, OUTPUT);
     pinMode(SHUTTER, OUTPUT);
-    digitalWrite(SHUTTER, HIGH); // release shutter
-    digitalWrite(CAMERA, HIGH); // release camera
+    digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
+    digitalWrite(CAMERA, CAMERA_LOW); // release camera
     
     lcd.init();
     lcd.begin(16, 2);
