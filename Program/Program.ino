@@ -182,14 +182,16 @@ class Settings
 
         static int16_t getVideoSpeed()
         {
-            return verifySpeed(eeprom_read_word(&videoSpeedOffset));
+            return verifyVideoSpeed(eeprom_read_word(&videoSpeedOffset));
         }
 
-        static int16_t verifySpeed(int16_t value)
+        static int16_t verifyVideoSpeed(int16_t value)
         {
-            return 1 <= value && value <= 255
-                ? value
-                : 100; // use default
+            return 
+                (-MAX_PWM <= value && value <= -MIN_PWM) ||
+                ( MIN_PWM <= value && value <=  MAX_PWM)
+                    ? value
+                    : 100; // use default
         }
 
         static void setVideoSpeed(int16_t value)
@@ -199,7 +201,14 @@ class Settings
 
         static int16_t getNonstopSpeed()
         {
-            return verifySpeed(eeprom_read_word(&nonstopSpeedOffset));
+            return verifyNonstopSpeed(eeprom_read_word(&nonstopSpeedOffset));
+        }
+
+        static int16_t verifyNonstopSpeed(int16_t value)
+        {
+            return MIN_PWM <= value && value <=  MAX_PWM
+                    ? value
+                    : 100; // use default
         }
 
         static void setNonstopSpeed(int16_t value)
@@ -489,13 +498,16 @@ class Mover
             detach();
         }
 
-        void softStop(int destinationSteps = -1)
+        void softStop()
         {
-            if( _state == Run)
+            if( _state == Run || _state == RunAcc || _state == RunDec)
             {
-                int decelerationLength = Settings::getNativeAcceleration();
-                _softStopPos = getGraduationCount() + decelerationLength;
-                _state = RunDec;
+                // Calculate stop point
+                float decelerationLength = Settings::getNativeAcceleration();
+                _softStopPos = (_currentSpeed - minSpeed) * decelerationLength /
+                    (maxSpeed - minSpeed);
+                _softStopPos += getCurrentPos();
+                _state = RunDec; // deceleration state
             }
             else
                 stop();
@@ -506,6 +518,13 @@ class Mover
             return _state == Stop;
         }
 
+        // Returns direction
+        bool isForward()
+        {
+            return _forward;
+        }
+
+        // Returns current PWM
         int getCurrentSpeed()
         {
             return _currentSpeed;
@@ -518,7 +537,8 @@ class Mover
             analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
         }
 
-        int getGraduationCount()
+        // Returns graduation count passed from starting point, can be negative
+        int getCurrentPos()
         {
             // critical section
             noInterrupts();
@@ -566,14 +586,14 @@ class Mover
 
         void tickMove()
         {
-            if (getGraduationCount() >= _graduations)
+            if (getCurrentPos() >= _graduations)
             {
                 stop();
                 return;
             }
 
             float x;
-            if (getGraduationCount() < _graduations / 2)
+            if (getCurrentPos() < _graduations / 2)
                 accelerate();
             else
                 decelerate();
@@ -583,13 +603,13 @@ class Mover
 
         void accelerate()
         {
-            float x = getGraduationCount();
+            float x = getCurrentPos();
             linearFunc(x);
         }
 
         void decelerate()
         {
-            float x = _graduations - getGraduationCount() - 1;
+            float x = _graduations - getCurrentPos() - 1;
             linearFunc(x);
         }
 
@@ -617,7 +637,7 @@ class Mover
                     break;
                     
                 case RunDec:
-                    float x = _softStopPos - getGraduationCount();
+                    float x = _softStopPos - getCurrentPos();
                     linearFunc(x);
                     if (_currentSpeed <= minSpeed)
                     {
@@ -810,26 +830,51 @@ void Runner::runVideo()
     if (mover.isStopped())
     {
         isRunning = false;
-        mover.softStop();
         selector.hold = false;
+        return;
     }
     
+    char direction = mover.isForward() ? 1 : -1;
     if (enc.press())
     {
-        if (mover.getState() == mover.State::RunDec)
-            return;
-            
-        if (mover.getState() == mover.State::Run)
-            Settings::setVideoSpeed(mover.getCurrentSpeed());
-        
-        mover.softStop();
+        switch (mover.getState())
+        {
+            case mover.State::RunDec:
+                return; // tried to stop already
+
+            case mover.State::Run:
+                Settings::setVideoSpeed(mover.getCurrentSpeed() * direction);
+            default:
+                mover.softStop();
+        }
     }
     else if (enc.turn())
     {
+        char direction = mover.isForward() ? 1 : -1;
         if (enc.left())
-            mover.changeCurrentSpeed(-5);
+        {
+            if (direction > 0 && mover.getCurrentSpeed() <= mover.minSpeed)
+            {
+                // Change direction
+                mover.stop();
+                mover.run(-mover.minSpeed);
+                return;
+            }
+
+            mover.changeCurrentSpeed(-5 * direction);
+        }
         else if (enc.right())
-            mover.changeCurrentSpeed(5);
+        {
+            if (direction < 0 && mover.getCurrentSpeed() <= mover.minSpeed)
+            {
+                // Change direction
+                mover.stop();
+                mover.run(mover.minSpeed);
+                return;
+            }
+
+            mover.changeCurrentSpeed(5 * direction);
+        }
     }
 }
 
