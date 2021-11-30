@@ -439,6 +439,10 @@ volatile int graduationCount;
 class Mover
 {
     public:
+        // Slightly more distance is required to decelerate than to accelerate
+        // This coefficient is intended to address this problem
+        float decFactor = 1.7;
+        
         enum State
         {
             Stop,
@@ -507,9 +511,9 @@ class Mover
             if( _state == Run || _state == RunAcc || _state == RunDec)
             {
                 // Calculate stop point
-                float decelerationLength = Settings::getNativeAcceleration();
+                float decelerationLength = Settings::getNativeAcceleration() * decFactor;
                 float graduationsToStop = (_currentSpeed - MIN_PWM) * decelerationLength /
-                    (_maxSpeed - MIN_PWM);
+                    (MAX_PWM - MIN_PWM);
                 _graduations = getCurrentPos() + graduationsToStop;
                 _state = RunDec; // deceleration state
             }
@@ -611,14 +615,15 @@ class Mover
 
         void tickMove()
         {
-            if (getCurrentPos() >= _graduations)
+            int currentPos = getCurrentPos();
+            if (currentPos >= _graduations)
             {
                 stop();
                 return;
             }
 
             float x;
-            if (getCurrentPos() < _graduations / 2)
+            if (currentPos < _graduations / 2)
                 accelerate();
             else
                 decelerate();
@@ -629,23 +634,23 @@ class Mover
         void accelerate()
         {
             float x = getCurrentPos();
-            linearFunc(x);
+
+            // Use linear function to accelerate
+            int accelerationLength = Settings::getNativeAcceleration();
+            _currentSpeed = MIN_PWM + x * (MAX_PWM - MIN_PWM) / accelerationLength;
+            _currentSpeed = validateSpeed(_currentSpeed);
         }
 
         void decelerate()
         {
             float x = _graduations - getCurrentPos() - 1;
-            linearFunc(x);
-        }
 
-        void linearFunc(float x)
-        {
-            // Use linear function to accelerate/decelerate
-            int accelerationLength = Settings::getNativeAcceleration();
-            _currentSpeed = MIN_PWM + x * (_maxSpeed - MIN_PWM) / accelerationLength;
+            // Use linear function to decelerate
+            int decelerationLength = Settings::getNativeAcceleration() * decFactor;
+            _currentSpeed = MIN_PWM + x * (MAX_PWM - MIN_PWM) / decelerationLength;
             _currentSpeed = validateSpeed(_currentSpeed);
         }
-
+        
         void tickRun()
         {
             switch (_state)
@@ -954,7 +959,6 @@ void Runner::runVideo()
 
             case mover.State::Run:
                 Settings::setVideoSpeed(mover.getMaxSpeed() * direction);
-                
             default:
                 mover.softStop();
         }
@@ -1029,7 +1033,7 @@ void Runner::finalize()
 void Runner::display(String top)
 {
     char strBuf[17];
-    sprintf(strBuf, "snapshot %d (%d)", stepNumber, Settings::getSteps());
+    sprintf(strBuf, "photo %d (%d)", stepNumber, Settings::getSteps());
     selector.menu.display(top, strBuf);
 }
 
