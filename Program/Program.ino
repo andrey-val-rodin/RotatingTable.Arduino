@@ -55,7 +55,7 @@ class Runner
     private:
         enum State
         {
-            None,
+            Waiting,
             Beginning,
             Delay,
             Exposure,
@@ -64,7 +64,7 @@ class Runner
         
         static void finalize();
         static void incrementStep();
-        static void display(String top);
+        static void display(String top, String stepName);
 };
 Runner runner;
 
@@ -812,6 +812,7 @@ bool isRunning = false;
 void Runner::runAutomatic()
 {
     const String mode = "Automatic...";
+    const String stepName = "photo";
     static State currentState;
     
     if (enc.press())
@@ -839,7 +840,7 @@ void Runner::runAutomatic()
     if (currentState == Beginning && millis() - exposureTimer >= Settings::getExposure())
     {
         stepNumber++;
-        display(mode);
+        display(mode, stepName);
         digitalWrite(SHUTTER, CAMERA_HIGH); // make first photo
         exposureTimer = millis();
         currentState = Exposure;
@@ -871,7 +872,7 @@ void Runner::runAutomatic()
     if (currentState == Delay && millis() - delayTimer >= Settings::getDelay())
     {
         stepNumber++;
-        display(mode);
+        display(mode, stepName);
         digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
         exposureTimer = millis();
         currentState = Exposure;
@@ -880,14 +881,72 @@ void Runner::runAutomatic()
 
 void Runner::runManual()
 {
-    selector.menu.display("manual...", "");
-    delay(3000);
-    selector.hold = false;
+    const String mode = "Manual...";
+    const String stepName = "step";
+    static State currentState;
+    
+    if (enc.press())
+    {
+        finalize();
+        return;
+    }
+
+    char stepCount = Settings::getSteps();
+    int stepGraduations = GRADUATIONS / stepCount;
+    if (!isRunning)
+    {
+        // Starting
+        stepNumber = 1;
+        display(mode, stepName);
+        digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
+        isRunning = true;
+        exposureTimer = millis();
+        currentState = Exposure;
+        return;
+    }
+
+    if (currentState == Exposure && millis() - exposureTimer >= Settings::getExposure())
+    {
+        digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
+        currentState = Waiting;
+        return;
+    }
+
+    if (photoButton.press() && currentState == Waiting)
+    {
+        digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
+        exposureTimer = millis();
+        currentState = Exposure;
+        return;
+    }
+
+    if (nextButton.press() && currentState == Waiting)
+    {
+        exposureTimer = millis();
+        currentState = Move;
+        mover.move(stepGraduations);
+        return;
+    }
+
+    if (currentState == Move && mover.isStopped())
+    {
+        if (stepNumber < stepCount)
+        {
+            currentState = Waiting;
+            stepNumber++;
+            display(mode, stepName);
+        }
+        else
+        {
+            finalize();
+        }
+    }
 }
 
 void Runner::runNonstop()
 {
     const String mode = "Nonstop...";
+    const String stepName = "photo";
     static State currentState;
     static int nextSnapshotPos;
     static bool needToStoreNewSpeed;
@@ -942,7 +1001,7 @@ void Runner::runNonstop()
     if (currentState == Beginning && millis() - exposureTimer >= Settings::getExposure())
     {
         stepNumber++;
-        display(mode);
+        display(mode, stepName);
         digitalWrite(SHUTTER, CAMERA_HIGH); // make first photo
         nextSnapshotPos = stepGraduations;
         exposureTimer = millis();
@@ -964,11 +1023,11 @@ void Runner::runNonstop()
         stepNumber++;
         if (stepNumber > stepCount)
         {
-            currentState = None;
+            currentState = Waiting;
         }
         else
         {
-            display(mode);
+            display(mode, stepName);
             digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
             exposureTimer = millis();
             currentState = Exposure;
@@ -1080,10 +1139,10 @@ void Runner::finalize()
     enc.resetState(); // reset encoder
 }
 
-void Runner::display(String top)
+void Runner::display(String top, String stepName)
 {
-    char strBuf[17];
-    sprintf(strBuf, "photo %d (%d)", stepNumber, Settings::getSteps());
+    char strBuf[20];
+    sprintf(strBuf, "%s %d (%d)", stepName.c_str(), stepNumber, Settings::getSteps());
     selector.menu.display(top, strBuf);
 }
 
