@@ -1,3 +1,4 @@
+#include <Encoder.h>
 #include <EncButton.h>
 #include <LiquidCrystal_I2C.h>
 #include <avr/eeprom.h>
@@ -12,7 +13,9 @@
 #define CAMERA_HIGH LOW
 #define MIN_PWM 10
 #define MAX_PWM 255
-#define GRADUATIONS 1080
+#define GRADUATIONS 4320
+
+Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 EncButton<EB_TICK, 12, 13, 11> enc; // pins 11, 12, 13
@@ -145,16 +148,17 @@ class Settings
             return verifyAcceleration(eeprom_read_byte(&accelerationOffset));
         }
 
-        // Returns value from 20 to 110 that can be used as a number of graduations
+        // Returns value from 80 to 440 that can be used as a number of graduations
         // for acceleration and deceleration from min to max PWM and vice versa.
         // Function converts current user-friendly value 1-10 to this native value.
-        // Note that native value shouldn't be less than 20.
-        static char getNativeAcceleration()
+        // Note that native value shouldn't be less than 80.
+        static int getNativeAcceleration()
         {
-            char result = getAcceleration();
+            int result = getAcceleration();
             result = abs(result - 11); // reverse
             result *= 10;
             result += 10;
+            result *= 4;
             return result;
         }
 
@@ -475,14 +479,9 @@ class SettingEditor
         }
 };
 
-volatile int graduationCount;
 class Mover
 {
     public:
-        // Slightly more distance is required to decelerate than to accelerate
-        // This coefficient is intended to address this problem
-        float decFactor = 1.7;
-        
         enum State
         {
             Stop,
@@ -522,8 +521,8 @@ class Mover
             _forward = graduations > 0;
             _currentSpeed = MIN_PWM;
             _maxSpeed = maxSpeed;
+            encoder.readAndReset();
             _state = Move;
-            attach();
         }
 
         void run(int speed)
@@ -534,8 +533,8 @@ class Mover
             _maxSpeed = abs(speed);
             _forward = speed > 0;
             _currentSpeed = MIN_PWM;
+            encoder.readAndReset();
             _state = RunAcc;
-            attach();
         }
 
         void stop()
@@ -543,7 +542,6 @@ class Mover
             analogWrite(MOTOR1, 0);
             analogWrite(MOTOR2, 0);
             _state = Stop;
-            detach();
         }
 
         void softStop()
@@ -551,7 +549,7 @@ class Mover
             if( _state == Run || _state == RunAcc || _state == RunDec)
             {
                 // Calculate stop point
-                float decelerationLength = Settings::getNativeAcceleration() * decFactor;
+                float decelerationLength = Settings::getNativeAcceleration();
                 float graduationsToStop = (_currentSpeed - MIN_PWM) * decelerationLength /
                     (MAX_PWM - MIN_PWM);
                 _graduations = getCurrentPos() + graduationsToStop;
@@ -610,12 +608,8 @@ class Mover
         // Returns graduation count passed from starting point
         int getCurrentPos()
         {
-            // critical section
-            noInterrupts();
-            int result = graduationCount;
-            interrupts();
-
-            return result;
+            int32_t pos = abs(encoder.read());
+            return pos;
         }
 
     private:
@@ -624,34 +618,6 @@ class Mover
         bool _forward;
         int _maxSpeed = MAX_PWM;
         int _currentSpeed;
-
-        static void forwardHandler()
-        {
-            if (digitalRead(MOTOR_ENC2) == LOW)
-                graduationCount++;
-            else
-                graduationCount--;
-        }
-
-        static void backwardHandler()
-        {
-            if (digitalRead(MOTOR_ENC2) == HIGH)
-                graduationCount++;
-            else
-                graduationCount--;
-        }
-
-        void attach()
-        {
-            graduationCount = 0;
-            attachInterrupt(digitalPinToInterrupt(MOTOR_ENC1),
-                _forward ? forwardHandler : backwardHandler, RISING);
-        }
-
-        void detach()
-        {
-            detachInterrupt(digitalPinToInterrupt(MOTOR_ENC1));
-        }
 
         void tickMove()
         {
@@ -686,7 +652,7 @@ class Mover
             float x = _graduations - getCurrentPos() - 1;
 
             // Use linear function to decelerate
-            int decelerationLength = Settings::getNativeAcceleration() * decFactor;
+            int decelerationLength = Settings::getNativeAcceleration();
             _currentSpeed = MIN_PWM + x * (MAX_PWM - MIN_PWM) / decelerationLength;
             _currentSpeed = validateSpeed(_currentSpeed);
         }
@@ -1164,8 +1130,6 @@ void setup()
 
     photoButton.setButtonLevel(HIGH);
     nextButton.setButtonLevel(HIGH);
-
-    Serial.begin(9600);
 }
 
 void loop()
