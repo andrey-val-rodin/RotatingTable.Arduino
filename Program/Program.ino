@@ -28,7 +28,8 @@ int16_t EEMEM nonstopSpeedOffset;
 char EEMEM menuIndexOffset;
 
 const char stepsLength = 12;
-const char steps[stepsLength] = { 4, 8, 18, 20, 24, 30, 36, 45, 60, 72, 90, 120 };
+const char lastStep = 120;
+const char steps[stepsLength] = { 4, 8, 18, 20, 24, 30, 36, 45, 60, 72, 90, lastStep };
 char FindInSteps(char numberOfSteps)
 {
     for (char i = 0; i < stepsLength; i++)
@@ -102,9 +103,26 @@ struct MenuItemsDef
         {"Exposure",     ""}};
 };
 
+class SpeedValidator
+{
+    public:
+        static int validate(int speed)
+        {
+            if (speed > MAX_PWM)
+                speed = MAX_PWM;
+            else if (speed < MIN_PWM)
+                speed = MIN_PWM;
+
+            return speed;
+        }
+};
+
 class Settings
 {
     public:
+        static const int16_t lowNonstopSpeed = MIN_PWM * lastStep;
+        static const int16_t highNonstopSpeed = lowNonstopSpeed * 6;
+        
         static char getSteps()
         {
             return verifySteps(eeprom_read_byte(&stepsOffset));
@@ -127,10 +145,10 @@ class Settings
             return verifyAcceleration(eeprom_read_byte(&accelerationOffset));
         }
 
-        // Converts user-friendly value 1-10 to native value 20-120
-        // Value from 20 to 100 is a number of graduations for acceleration and deceleration
-        // from min to max PWM and vice versa
-        // Shouldn't be less than 20
+        // Returns value from 20 to 110 that can be used as a number of graduations
+        // for acceleration and deceleration from min to max PWM and vice versa.
+        // Function converts current user-friendly value 1-10 to this native value.
+        // Note that native value shouldn't be less than 20.
         static char getNativeAcceleration()
         {
             char result = getAcceleration();
@@ -205,6 +223,7 @@ class Settings
             eeprom_update_word(&videoSpeedOffset, value);
         }
 
+        // Returns value in range from lowNonstopSpeed to highNonstopSpeed.
         static int16_t getNonstopSpeed()
         {
             return verifyNonstopSpeed(eeprom_read_word(&nonstopSpeedOffset));
@@ -212,9 +231,30 @@ class Settings
 
         static int16_t verifyNonstopSpeed(int16_t value)
         {
-            return MIN_PWM <= value && value <=  MAX_PWM
+            return lowNonstopSpeed <= value && value <= highNonstopSpeed
                     ? value
-                    : 100; // use default
+                    : lowNonstopSpeed; // use default
+        }
+
+        // Returns speed depending on current number of steps
+        static int16_t getNativeNonstopSpeed()
+        {
+            return SpeedValidator::validate(getNonstopSpeed() / getSteps());
+        }
+
+        static int16_t getLowNativeNonstopSpeed()
+        {
+            float f = (float) lowNonstopSpeed / getSteps();
+            int16_t i = f;
+            if (f > i)
+                i++;
+
+            return SpeedValidator::validate(i);
+        }
+
+        static int16_t getHighNativeNonstopSpeed()
+        {
+            return SpeedValidator::validate(highNonstopSpeed / getSteps());
         }
 
         static void setNonstopSpeed(int16_t value)
@@ -552,7 +592,7 @@ class Mover
                     if (_currentSpeed == _maxSpeed)
                     {
                         _maxSpeed += delta;
-                        _maxSpeed = validateAbsoluteSpeed(_maxSpeed);
+                        _maxSpeed = SpeedValidator::validate(_maxSpeed);
                         _currentSpeed = _maxSpeed;
                         analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
                     }
@@ -560,7 +600,7 @@ class Mover
                     
                 case Run:
                     _maxSpeed += delta;
-                    _maxSpeed = validateAbsoluteSpeed(_maxSpeed);
+                    _maxSpeed = SpeedValidator::validate(_maxSpeed);
                     _currentSpeed = _maxSpeed;
                     analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
                     break;
@@ -676,16 +716,6 @@ class Mover
         {
             if (speed > _maxSpeed)
                 speed = _maxSpeed;
-            else if (speed < MIN_PWM)
-                speed = MIN_PWM;
-
-            return speed;
-        }
-        
-        int validateAbsoluteSpeed(int speed)
-        {
-            if (speed > MAX_PWM)
-                speed = MAX_PWM;
             else if (speed < MIN_PWM)
                 speed = MIN_PWM;
 
@@ -860,6 +890,7 @@ void Runner::runNonstop()
     const String mode = "Nonstop...";
     static State currentState;
     static int nextSnapshotPos;
+    static bool needToStoreNewSpeed;
  
     if (enc.press())
     {
@@ -870,11 +901,27 @@ void Runner::runNonstop()
     {
         if (enc.left())
         {
-            mover.changeSpeed(-delta);
+            if (mover.getCurrentSpeed() > Settings::getLowNativeNonstopSpeed())
+            {
+                int d = delta;
+                if (mover.getCurrentSpeed() - d < Settings::getLowNativeNonstopSpeed())
+                    d = mover.getCurrentSpeed() - Settings::getLowNativeNonstopSpeed();
+
+                mover.changeSpeed(-d);
+                needToStoreNewSpeed = true;
+            }
         }
         else if (enc.right())
         {
-            mover.changeSpeed(delta);
+            if (mover.getCurrentSpeed() < Settings::getHighNativeNonstopSpeed())
+            {
+                int d = delta;
+                if (mover.getCurrentSpeed() + d > Settings::getHighNativeNonstopSpeed())
+                    d = Settings::getHighNativeNonstopSpeed() - mover.getCurrentSpeed();
+                    
+                mover.changeSpeed(d);
+                needToStoreNewSpeed = true;
+            }
         }
     }
 
@@ -886,6 +933,7 @@ void Runner::runNonstop()
         stepNumber = 0;
         digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
         isRunning = true;
+        needToStoreNewSpeed = false;
         exposureTimer = millis();
         currentState = Beginning;
         return;
@@ -899,7 +947,8 @@ void Runner::runNonstop()
         nextSnapshotPos = stepGraduations;
         exposureTimer = millis();
         currentState = Exposure;
-        mover.move(GRADUATIONS, Settings::getNonstopSpeed());
+        Settings::getNativeNonstopSpeed();
+        mover.move(GRADUATIONS, Settings::getNativeNonstopSpeed());
         return;
     }
 
@@ -928,7 +977,8 @@ void Runner::runNonstop()
 
     if (isRunning && currentState != Beginning && mover.isStopped())
     {
-        Settings::setNonstopSpeed(mover.getMaxSpeed());
+        if (needToStoreNewSpeed)
+            Settings::setNonstopSpeed(mover.getMaxSpeed() * Settings::getSteps());
         finalize();
     }
 }
