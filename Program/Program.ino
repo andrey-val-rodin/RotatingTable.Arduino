@@ -1,17 +1,18 @@
 #include <Encoder.h>
 #include <EncButton.h>
 #include <LiquidCrystal_I2C.h>
+#include <PWM.h>
 #include <avr/eeprom.h>
 
-#define MOTOR1 6
-#define MOTOR2 5
+#define MOTOR1 10
+#define MOTOR2 9
 #define MOTOR_ENC1 2
 #define MOTOR_ENC2 3
-#define CAMERA 9
-#define SHUTTER 10
+#define CAMERA 5
+#define SHUTTER 6
 #define CAMERA_LOW HIGH
 #define CAMERA_HIGH LOW
-#define MIN_PWM 10
+#define MIN_PWM 60
 #define MAX_PWM 255
 #define GRADUATIONS 4320
 
@@ -22,7 +23,7 @@ EncButton<EB_TICK, 12, 13, 11> enc; // pins 11, 12, 13
 EncButton<EB_TICK, 7> photoButton;  // pin 7
 EncButton<EB_TICK, 4> nextButton;   // pin 4
 
-char EEMEM stepsOffset;
+int16_t EEMEM stepsOffset;
 char EEMEM accelerationOffset;
 int16_t EEMEM delayOffset;
 int16_t EEMEM exposureOffset;
@@ -30,10 +31,10 @@ int16_t EEMEM videoSpeedOffset;
 int16_t EEMEM nonstopSpeedOffset;
 char EEMEM menuIndexOffset;
 
-const char stepsLength = 12;
-const char lastStep = 120;
-const char steps[stepsLength] = { 4, 8, 18, 20, 24, 30, 36, 45, 60, 72, 90, lastStep };
-char FindInSteps(char numberOfSteps)
+const char stepsLength = 22;
+const int16_t steps[stepsLength] =
+    { 2, 4, 5, 6, 8, 9, 10, 12, 15, 18, 20, 24, 30, 36, 40, 45, 60, 72, 90, 120, 180, 360 };
+char FindInSteps(int16_t numberOfSteps)
 {
     for (char i = 0; i < stepsLength; i++)
     {
@@ -56,13 +57,14 @@ class Runner
         static void runRotate();
         
     private:
-        enum State
+        enum State : char
         {
             Waiting,
             Beginning,
             Delay,
             Exposure,
-            Move
+            Move,
+            Correction
         };
         
         static void finalize();
@@ -83,12 +85,12 @@ struct MenuItemsDef
     static const char topItemsLength = 6;
 
     MenuItem topItems[topItemsLength] = {
-        {"Automatic",   "press to start"},
-        {"Manual",      "press to start"},
-        {"Nonstop",     "press to start"},
-        {"Video",       "press to start"},
-        {"Rotate 90",   "press to rotate"},
-        {"Settings",    "press to edit"}};
+        {"%Auto",       ""},
+        {"%Manual",     ""},
+        {"%Nonstop",    ""},
+        {"Video",       ""},
+        {"Rotate 90",   ""},
+        {"Settings",    ""}};
 
     callback_t handlers[topItemsLength - 1] = {
         Runner::runAutomatic,
@@ -123,24 +125,24 @@ class SpeedValidator
 class Settings
 {
     public:
-        static const int16_t lowNonstopSpeed = MIN_PWM * lastStep;
-        static const int16_t highNonstopSpeed = lowNonstopSpeed * 6;
+        static const int32_t lowNonstopSpeed = MIN_PWM * 60;
+        static const int32_t highNonstopSpeed = lowNonstopSpeed * 6;
         
-        static char getSteps()
+        static int16_t getSteps()
         {
-            return verifySteps(eeprom_read_byte(&stepsOffset));
+            return verifySteps(eeprom_read_word(&stepsOffset));
         }
 
-        static char verifySteps(char value)
+        static int16_t verifySteps(int16_t value)
         {
             return FindInSteps(value) >= 0
                 ? value
                 : 24; // use default
         }
 
-        static void setSteps(char value)
+        static void setSteps(int16_t value)
         {
-            eeprom_update_byte(&stepsOffset, value);
+            eeprom_update_word(&stepsOffset, value);
         }
 
         static char getAcceleration()
@@ -248,16 +250,20 @@ class Settings
 
         static int16_t getLowNativeNonstopSpeed()
         {
+          /*
             float f = (float) lowNonstopSpeed / getSteps();
             int16_t i = f;
             if (f > i)
                 i++;
-
+          */
+            int16_t i = lowNonstopSpeed / getSteps();
+Serial.println("low=" + String(SpeedValidator::validate(i)) + "  native=" + String(lowNonstopSpeed));
             return SpeedValidator::validate(i);
         }
 
         static int16_t getHighNativeNonstopSpeed()
         {
+Serial.println("high=" + String(SpeedValidator::validate(highNonstopSpeed / getSteps())) + "  native=" + String(highNonstopSpeed));
             return SpeedValidator::validate(highNonstopSpeed / getSteps());
         }
 
@@ -297,7 +303,7 @@ class Menu
             current = 0;
         }
 
-        void setItems(const char* items, char length)
+        void setItems(const int16_t* items, char length)
         {
             _array = items;
             _length = length;
@@ -316,10 +322,14 @@ class Menu
 
         void display()
         {
+            String top;
             switch (_mode)
             {
                 case MenuItems:
-                    printTop(_items[current].top);
+                    top = _items[current].top;
+                    if (top.startsWith("%"))
+                        top = formatSteps(top);
+                    printTop(top);
                     printBottom(_items[current].bottom);
                     break;
 
@@ -335,6 +345,14 @@ class Menu
             }
         }
 
+        String formatSteps(String top)
+        {
+            top.remove(0, 1); // remove % sign
+            char strBuf[20];
+            sprintf(strBuf, "%s (%d)", top.c_str(), Settings::getSteps());
+            return strBuf;
+        }
+        
         void display(String top, String bottom)
         {
             printTop(top);
@@ -365,7 +383,7 @@ class Menu
 
         Mode _mode;
         MenuItem* _items;
-        char* _array;
+        int16_t* _array;
         char _length;
         char _offset;
         char _multiplier;
@@ -479,10 +497,11 @@ class SettingEditor
         }
 };
 
+int oldPos = -999;
 class Mover
 {
     public:
-        enum State
+        enum State : char
         {
             Stop,
             Move,
@@ -493,6 +512,14 @@ class Mover
 
         void tick()
         {
+/*
+int newPos = getCurrentPos();
+if (oldPos != newPos)
+{
+  Serial.println(newPos);
+  oldPos = newPos;
+}
+*/
             switch (_state)
             {
                 case Move:
@@ -771,13 +798,13 @@ class Selector
 };
 Selector selector;
 
-char stepNumber;
-unsigned long delayTimer = 0;
-unsigned long exposureTimer = 0;
+int16_t stepNumber = 0;
+unsigned long timer = 0;
 bool isRunning = false;
+bool needToCheckError = true;
 void Runner::runAutomatic()
 {
-    const String mode = "Automatic...";
+    const String mode = "Auto...";
     const String stepName = "photo";
     static State currentState;
     
@@ -790,42 +817,50 @@ void Runner::runAutomatic()
     if (!mover.isStopped())
         return;
 
-    char stepCount = Settings::getSteps();
-    int stepGraduations = GRADUATIONS / stepCount;
+    int16_t stepCount = Settings::getSteps();
+    int16_t stepGraduations = GRADUATIONS / stepCount;
     if (!isRunning)
     {
         // Starting
         stepNumber = 0;
         digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
         isRunning = true;
-        exposureTimer = millis();
+        timer = millis();
         currentState = Beginning;
         return;
     }
 
-    if (currentState == Beginning && millis() - exposureTimer >= Settings::getExposure())
+    if (currentState == Beginning && millis() - timer >= Settings::getExposure())
     {
         stepNumber++;
         display(mode, stepName);
         digitalWrite(SHUTTER, CAMERA_HIGH); // make first photo
-        exposureTimer = millis();
+        timer = millis();
         currentState = Exposure;
         return;
     }
     
-    if (currentState == Exposure && millis() - exposureTimer >= Settings::getExposure())
+    if (currentState == Exposure && millis() - timer >= Settings::getExposure())
     {
         digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
         currentState = Move;
+        needToCheckError = true;
         mover.move(stepGraduations);
         return;
     }
-
+    
     if (currentState == Move)
     {
+        if (needToCheckError)
+        {
+            timer = millis();
+            currentState = Correction;
+            return;
+        }
+
         if (stepNumber < stepCount)
         {
-            delayTimer = millis(); // set timer
+            timer = millis(); // set timer
             currentState = Delay;
         }
         else
@@ -835,12 +870,30 @@ void Runner::runAutomatic()
         return;
     }
 
-    if (currentState == Delay && millis() - delayTimer >= Settings::getDelay())
+    const int completeStopDelay = 50; // 50 ms for complete stop
+    if (currentState == Correction && millis() - timer >= completeStopDelay)
+    {
+        int16_t error = stepGraduations - mover.getCurrentPos();
+        timer = millis();
+        if (error == 0)
+            timer -= completeStopDelay;
+        else
+        {
+Serial.println(mover.getCurrentPos());
+Serial.println("Error=" + String(error));
+            mover.move(error, MIN_PWM);
+        }
+        currentState = Move;
+        needToCheckError = false;
+        return;
+    }
+
+    if (currentState == Delay && millis() - timer >= Settings::getDelay())
     {
         stepNumber++;
         display(mode, stepName);
         digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
-        exposureTimer = millis();
+        timer = millis();
         currentState = Exposure;
     }
 }
@@ -857,7 +910,7 @@ void Runner::runManual()
         return;
     }
 
-    char stepCount = Settings::getSteps();
+    int16_t stepCount = Settings::getSteps();
     int stepGraduations = GRADUATIONS / stepCount;
     if (!isRunning)
     {
@@ -866,12 +919,12 @@ void Runner::runManual()
         display(mode, stepName);
         digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
         isRunning = true;
-        exposureTimer = millis();
+        timer = millis();
         currentState = Exposure;
         return;
     }
 
-    if (currentState == Exposure && millis() - exposureTimer >= Settings::getExposure())
+    if (currentState == Exposure && millis() - timer >= Settings::getExposure())
     {
         digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
         currentState = Waiting;
@@ -881,14 +934,14 @@ void Runner::runManual()
     if (photoButton.press() && currentState == Waiting)
     {
         digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
-        exposureTimer = millis();
+        timer = millis();
         currentState = Exposure;
         return;
     }
 
     if (nextButton.press() && currentState == Waiting)
     {
-        exposureTimer = millis();
+        timer = millis();
         currentState = Move;
         mover.move(stepGraduations);
         return;
@@ -950,7 +1003,7 @@ void Runner::runNonstop()
         }
     }
 
-    char stepCount = Settings::getSteps();
+    int16_t stepCount = Settings::getSteps();
     int stepGraduations = GRADUATIONS / stepCount;
     if (!isRunning)
     {
@@ -959,25 +1012,25 @@ void Runner::runNonstop()
         digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
         isRunning = true;
         needToStoreNewSpeed = false;
-        exposureTimer = millis();
+        timer = millis();
         currentState = Beginning;
         return;
     }
 
-    if (currentState == Beginning && millis() - exposureTimer >= Settings::getExposure())
+    if (currentState == Beginning && millis() - timer >= Settings::getExposure())
     {
         stepNumber++;
         display(mode, stepName);
         digitalWrite(SHUTTER, CAMERA_HIGH); // make first photo
         nextSnapshotPos = stepGraduations;
-        exposureTimer = millis();
+        timer = millis();
         currentState = Exposure;
         Settings::getNativeNonstopSpeed();
         mover.move(GRADUATIONS, Settings::getNativeNonstopSpeed());
         return;
     }
 
-    if (currentState == Exposure && millis() - exposureTimer >= 50)
+    if (currentState == Exposure && millis() - timer >= 50)
     {
         digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
         currentState = Move;
@@ -995,7 +1048,7 @@ void Runner::runNonstop()
         {
             display(mode, stepName);
             digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
-            exposureTimer = millis();
+            timer = millis();
             currentState = Exposure;
         }
     }
@@ -1099,6 +1152,7 @@ void Runner::finalize()
     isRunning = false;
     mover.stop();
     stepNumber = 0;
+    needToCheckError = true;
     digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
     digitalWrite(CAMERA, CAMERA_LOW); // release camera
     selector.hold = false; // release selector
@@ -1114,6 +1168,19 @@ void Runner::display(String top, String stepName)
 
 void setup()
 {
+    // Change PWM frequency
+    // Pins D9 и D10 - 976 Гц
+    //TCCR1A = 0b00000001;  // 8bit
+    //TCCR1B = 0b00001011;  // x64 fast pwm
+// Пины D9 и D10 - 7.8 кГц
+//TCCR1A = 0b00000001;  // 8bit
+//TCCR1B = 0b00001010;  // x8 fast pwm   
+
+// from other letter:
+//7 812,5 Гц
+    //TCCR1A = TCCR1A & 0xe0 | 1;
+    //TCCR1B = TCCR1B & 0xe0 | 0x0a;
+    
     pinMode(MOTOR_ENC1, INPUT);
     pinMode(MOTOR_ENC2, INPUT);
     pinMode(MOTOR1, OUTPUT);
@@ -1130,6 +1197,21 @@ void setup()
 
     photoButton.setButtonLevel(HIGH);
     nextButton.setButtonLevel(HIGH);
+
+  // via library GyverPWM
+  /*
+  // запустить ШИМ на D9 с частотой 150'000 Гц, режим FAST_PWM
+  PWM_frequency(9, 15000, FAST_PWM);
+
+  // запустить ШИМ на D10 с частотой 150'000 Гц, режим FAST_PWM
+  PWM_frequency(10, 15000, FAST_PWM);}
+  */
+
+  // via library PWM
+  SetPinFrequencySafe(MOTOR1, 15000);
+  SetPinFrequencySafe(MOTOR2, 15000);
+
+  Serial.begin(9600);
 }
 
 void loop()
