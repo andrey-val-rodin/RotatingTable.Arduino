@@ -870,7 +870,7 @@ void Runner::runAutomatic()
         return;
     }
 
-    const int completeStopDelay = 50; // 50 ms for complete stop
+    const int completeStopDelay = 100; // 100 ms for complete stop
     if (currentState == Correction && millis() - timer >= completeStopDelay)
     {
         int16_t error = stepGraduations - mover.getCurrentPos();
@@ -943,12 +943,20 @@ void Runner::runManual()
     {
         timer = millis();
         currentState = Move;
+        needToCheckError = true;
         mover.move(stepGraduations);
         return;
     }
 
     if (currentState == Move && mover.isStopped())
     {
+        if (needToCheckError)
+        {
+            timer = millis();
+            currentState = Correction;
+            return;
+        }
+
         if (stepNumber < stepCount)
         {
             currentState = Waiting;
@@ -959,6 +967,21 @@ void Runner::runManual()
         {
             finalize();
         }
+    }
+
+    const int completeStopDelay = 100; // 100 ms for complete stop
+    if (currentState == Correction && millis() - timer >= completeStopDelay)
+    {
+        int16_t error = stepGraduations - mover.getCurrentPos();
+        if (error != 0)
+        {
+Serial.println(mover.getCurrentPos());
+Serial.println("Error=" + String(error));
+            mover.move(error, MIN_PWM);
+        }
+        currentState = Move;
+        needToCheckError = false;
+        return;
     }
 }
 
@@ -1025,12 +1048,13 @@ void Runner::runNonstop()
         nextSnapshotPos = stepGraduations;
         timer = millis();
         currentState = Exposure;
-        Settings::getNativeNonstopSpeed();
+        needToCheckError = true;
         mover.move(GRADUATIONS, Settings::getNativeNonstopSpeed());
         return;
     }
 
-    if (currentState == Exposure && millis() - timer >= 50)
+    const int releaseShutterDelay = 50;
+    if (currentState == Exposure && millis() - timer >= releaseShutterDelay)
     {
         digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
         currentState = Move;
@@ -1053,10 +1077,34 @@ void Runner::runNonstop()
         }
     }
 
-    if (isRunning && currentState != Beginning && mover.isStopped())
+    if (isRunning && currentState != Beginning && currentState != Correction && mover.isStopped())
     {
         if (needToStoreNewSpeed)
             Settings::setNonstopSpeed(mover.getMaxSpeed() * Settings::getSteps());
+        if (needToCheckError)
+        {
+            timer = millis();
+            currentState = Correction;
+            return;
+        }
+        
+        finalize();
+    }
+
+    const int completeStopDelay = 100; // 100 ms for complete stop
+    if (currentState == Correction && millis() - timer >= completeStopDelay)
+    {
+        int16_t error = GRADUATIONS - mover.getCurrentPos();
+        if (error != 0)
+        {
+Serial.println(mover.getCurrentPos());
+Serial.println("Error=" + String(error));
+            mover.move(error, MIN_PWM);
+            currentState = Waiting;
+            needToCheckError = false;
+            return;
+        }
+
         finalize();
     }
 }
@@ -1123,9 +1171,11 @@ void Runner::runVideo()
 
 void Runner::runRotate()
 {
+    static State currentState;
+
     if (!isRunning)
     {
-        selector.menu.display("Rotation...", "<--  -->");
+        selector.menu.display("Rotation...", "<-  ->");
         isRunning = true;
     }
     
@@ -1142,9 +1192,47 @@ void Runner::runRotate()
     }
 
     if (enc.left())
+    {
+        currentState = Move;
+        needToCheckError = true;
         mover.move(-GRADUATIONS / 4);
+    }
     else if (enc.right())
+    {
+        currentState = Move;
+        needToCheckError = true;
         mover.move(GRADUATIONS / 4);
+    }
+
+    if (currentState == Move && mover.isStopped())
+    {
+        if (needToCheckError)
+        {
+            timer = millis();
+            currentState = Correction;
+            return;
+        }
+
+        currentState = Waiting;
+    }
+    
+    const int completeStopDelay = 100; // 100 ms for complete stop
+    if (currentState == Correction && millis() - timer >= completeStopDelay)
+    {
+        int16_t error = GRADUATIONS / 4 - mover.getCurrentPos();
+        if (!mover.isForward())
+            error = -error;
+            
+        if (error != 0)
+        {
+Serial.println(mover.getCurrentPos());
+Serial.println("Error=" + String(error));
+            mover.move(error, MIN_PWM);
+        }
+        currentState = Move;
+        needToCheckError = false;
+        return;
+    }
 }
 
 void Runner::finalize()
