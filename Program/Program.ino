@@ -14,7 +14,8 @@
 #define CAMERA_HIGH LOW
 #define MIN_PWM 60
 #define MAX_PWM 255
-#define GRADUATIONS 4320
+#define GRADUATIONS 4320 // number of graduations per turn
+#define DEGREE (GRADUATIONS / 360)
 
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
@@ -150,18 +151,18 @@ class Settings
             return verifyAcceleration(eeprom_read_byte(&accelerationOffset));
         }
 
-        // Returns value from 80 to 440 that can be used as a number of graduations
-        // for acceleration and deceleration from min to max PWM and vice versa.
+        // Returns number of graduations for acceleration and deceleration from min to max PWM and vice versa.
         // Function converts current user-friendly value 1-10 to this native value.
-        // Note that native value shouldn't be less than 80.
+        // Note that native value shouldn't be less than 80 when GRADUATIONS = 4320.
         static int getNativeAcceleration()
         {
             int result = getAcceleration();
             result = abs(result - 11); // reverse
             result *= 10;
             result += 10;
-            result *= 4;
-            return result;
+            result *= DEGREE;
+            result /= 3;
+            return result; // value in range from 80 to 440 when GRADUATIONS = 4320
         }
 
         static char verifyAcceleration(char value)
@@ -497,7 +498,6 @@ class SettingEditor
         }
 };
 
-int oldPos = -999;
 class Mover
 {
     public:
@@ -512,14 +512,6 @@ class Mover
 
         void tick()
         {
-/*
-int newPos = getCurrentPos();
-if (oldPos != newPos)
-{
-  Serial.println(newPos);
-  oldPos = newPos;
-}
-*/
             switch (_state)
             {
                 case Move:
@@ -586,25 +578,25 @@ if (oldPos != newPos)
                 stop();
         }
 
-        bool isStopped()
+        inline bool isStopped()
         {
             return _state == Stop;
         }
 
         // Returns direction
-        bool isForward()
+        inline bool isForward()
         {
             return _forward;
         }
 
         // Returns current PWM
-        int getCurrentSpeed()
+        inline int getCurrentSpeed()
         {
             return _currentSpeed;
         }
 
         // Returns maximum PWM
-        int getMaxSpeed()
+        inline int getMaxSpeed()
         {
             return _maxSpeed;
         }
@@ -644,19 +636,19 @@ if (oldPos != newPos)
         int _graduations;
         bool _forward;
         int _maxSpeed = MAX_PWM;
+        int _currentPos;
         int _currentSpeed;
 
         void tickMove()
         {
-            int currentPos = getCurrentPos();
-            if (currentPos >= _graduations)
+            _currentPos = getCurrentPos();
+            if (_currentPos >= _graduations)
             {
                 stop();
                 return;
             }
 
-            float x;
-            if (currentPos < _graduations / 2)
+            if (_currentPos < _graduations / 2)
                 accelerate();
             else
                 decelerate();
@@ -666,22 +658,39 @@ if (oldPos != newPos)
 
         void accelerate()
         {
-            float x = getCurrentPos();
-
             // Use linear function to accelerate
-            int accelerationLength = Settings::getNativeAcceleration();
-            _currentSpeed = MIN_PWM + x * (MAX_PWM - MIN_PWM) / accelerationLength;
-            _currentSpeed = validateSpeed(_currentSpeed);
+            float x = _currentPos;
+            float accelerationLength = Settings::getNativeAcceleration();
+            float currentSpeed = MIN_PWM + x * (MAX_PWM - MIN_PWM) / accelerationLength;
+            _currentSpeed = validateSpeed(currentSpeed);
         }
 
         void decelerate()
         {
-            float x = _graduations - getCurrentPos() - 1;
-
             // Use linear function to decelerate
-            int decelerationLength = Settings::getNativeAcceleration();
-            _currentSpeed = MIN_PWM + x * (MAX_PWM - MIN_PWM) / decelerationLength;
-            _currentSpeed = validateSpeed(_currentSpeed);
+            float x = _graduations - _currentPos - getFinalDistance();
+            float decelerationLength = Settings::getNativeAcceleration();
+            float currentSpeed = MIN_PWM + x * (MAX_PWM - MIN_PWM) / decelerationLength;
+            _currentSpeed = validateSpeed(currentSpeed);
+        }
+
+        // End of the step we should go with MIN_PWM
+        // This function returns length of this final distance
+        int getFinalDistance()
+        {
+            switch (Settings::getAcceleration())
+            {
+                case 10:
+                    return 16;
+                case 9:
+                    return 12;
+                case 8:
+                    return 6;
+                case 7:
+                    return 3;
+                default:
+                    return 0;
+            }
         }
         
         void tickRun()
@@ -798,6 +807,7 @@ class Selector
 };
 Selector selector;
 
+const int completeStopDelay = 50; // 50 ms to complete stop
 int16_t stepNumber = 0;
 unsigned long timer = 0;
 bool isRunning = false;
@@ -870,7 +880,6 @@ void Runner::runAutomatic()
         return;
     }
 
-    const int completeStopDelay = 100; // 100 ms for complete stop
     if (currentState == Correction && millis() - timer >= completeStopDelay)
     {
         int16_t error = stepGraduations - mover.getCurrentPos();
@@ -880,7 +889,7 @@ void Runner::runAutomatic()
         else
         {
 Serial.println(mover.getCurrentPos());
-Serial.println("Error=" + String(error));
+Serial.println("Error = " + String(error));
             mover.move(error, MIN_PWM);
         }
         currentState = Move;
@@ -969,14 +978,13 @@ void Runner::runManual()
         }
     }
 
-    const int completeStopDelay = 100; // 100 ms for complete stop
     if (currentState == Correction && millis() - timer >= completeStopDelay)
     {
         int16_t error = stepGraduations - mover.getCurrentPos();
         if (error != 0)
         {
 Serial.println(mover.getCurrentPos());
-Serial.println("Error=" + String(error));
+Serial.println("Error = " + String(error));
             mover.move(error, MIN_PWM);
         }
         currentState = Move;
@@ -1091,14 +1099,13 @@ void Runner::runNonstop()
         finalize();
     }
 
-    const int completeStopDelay = 100; // 100 ms for complete stop
     if (currentState == Correction && millis() - timer >= completeStopDelay)
     {
         int16_t error = GRADUATIONS - mover.getCurrentPos();
         if (error != 0)
         {
 Serial.println(mover.getCurrentPos());
-Serial.println("Error=" + String(error));
+Serial.println("Error = " + String(error));
             mover.move(error, MIN_PWM);
             currentState = Waiting;
             needToCheckError = false;
@@ -1216,7 +1223,6 @@ void Runner::runRotate()
         currentState = Waiting;
     }
     
-    const int completeStopDelay = 100; // 100 ms for complete stop
     if (currentState == Correction && millis() - timer >= completeStopDelay)
     {
         int16_t error = GRADUATIONS / 4 - mover.getCurrentPos();
@@ -1226,7 +1232,7 @@ void Runner::runRotate()
         if (error != 0)
         {
 Serial.println(mover.getCurrentPos());
-Serial.println("Error=" + String(error));
+Serial.println("Error = " + String(error));
             mover.move(error, MIN_PWM);
         }
         currentState = Move;
@@ -1256,19 +1262,6 @@ void Runner::display(String top, String stepName)
 
 void setup()
 {
-    // Change PWM frequency
-    // Pins D9 и D10 - 976 Гц
-    //TCCR1A = 0b00000001;  // 8bit
-    //TCCR1B = 0b00001011;  // x64 fast pwm
-// Пины D9 и D10 - 7.8 кГц
-//TCCR1A = 0b00000001;  // 8bit
-//TCCR1B = 0b00001010;  // x8 fast pwm   
-
-// from other letter:
-//7 812,5 Гц
-    //TCCR1A = TCCR1A & 0xe0 | 1;
-    //TCCR1B = TCCR1B & 0xe0 | 0x0a;
-    
     pinMode(MOTOR_ENC1, INPUT);
     pinMode(MOTOR_ENC2, INPUT);
     pinMode(MOTOR1, OUTPUT);
@@ -1286,18 +1279,8 @@ void setup()
     photoButton.setButtonLevel(HIGH);
     nextButton.setButtonLevel(HIGH);
 
-  // via library GyverPWM
-  /*
-  // запустить ШИМ на D9 с частотой 150'000 Гц, режим FAST_PWM
-  PWM_frequency(9, 15000, FAST_PWM);
-
-  // запустить ШИМ на D10 с частотой 150'000 Гц, режим FAST_PWM
-  PWM_frequency(10, 15000, FAST_PWM);}
-  */
-
-  // via library PWM
-  SetPinFrequencySafe(MOTOR1, 15000);
-  SetPinFrequencySafe(MOTOR2, 15000);
+    SetPinFrequencySafe(MOTOR1, 15000);
+    SetPinFrequencySafe(MOTOR2, 15000);
 
   Serial.begin(9600);
 }
