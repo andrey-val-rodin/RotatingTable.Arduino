@@ -11,32 +11,11 @@
 #define DEGREE (GRADUATIONS / 360)
 
 int MIN_PWM = 10;
+const int delta = 1;
 
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
 EncButton<EB_TICK, 12, 13, 11> enc; // pins 11, 12, 13
-
-int16_t EEMEM stepsOffset;
-char EEMEM accelerationOffset;
-int16_t EEMEM delayOffset;
-int16_t EEMEM exposureOffset;
-int16_t EEMEM videoSpeedOffset;
-int16_t EEMEM nonstopSpeedOffset;
-char EEMEM menuIndexOffset;
-
-const char stepsLength = 22;
-const int16_t steps[stepsLength] =
-    { 2, 4, 5, 6, 8, 9, 10, 12, 15, 18, 20, 24, 30, 36, 40, 45, 60, 72, 90, 120, 180, 360 };
-char FindInSteps(int16_t numberOfSteps)
-{
-    for (char i = 0; i < stepsLength; i++)
-    {
-        if (steps[i] == numberOfSteps)
-            return i;
-    }
-
-    return -1;
-}
 
 class SpeedValidator
 {
@@ -55,26 +34,6 @@ class SpeedValidator
 class Settings
 {
     public:
-        static const int32_t lowNonstopSpeed = 1200;
-        static const int32_t highNonstopSpeed = 12000;
-        
-        static int16_t getSteps()
-        {
-            return validateSteps(eeprom_read_word(&stepsOffset));
-        }
-
-        static int16_t validateSteps(int16_t value)
-        {
-            return FindInSteps(value) >= 0
-                ? value
-                : 24; // use default
-        }
-
-        static void setSteps(int16_t value)
-        {
-            eeprom_update_word(&stepsOffset, value);
-        }
-
         static char getAcceleration()
         {
             return 10;
@@ -92,107 +51,6 @@ class Settings
             result *= DEGREE;
             result /= 3;
             return result; // value in range from 80 to 440 when GRADUATIONS = 4320
-        }
-
-        static char validateAcceleration(char value)
-        {
-            return 1 <= value && value <= 10
-                ? value
-                : 7; // use default
-        }
-
-        static void setAcceleration(char value)
-        {
-            eeprom_update_byte(&accelerationOffset, value);
-        }
-
-        static int16_t getDelay()
-        {
-            return validateDelay(eeprom_read_word(&delayOffset));
-        }
-
-        static int16_t validateDelay(int16_t value)
-        {
-            return 0 <= value && value <= 5000 && value % 100 == 0
-                ? value
-                : 100; // use default
-        }
-
-        static void setDelay(int16_t value)
-        {
-            eeprom_update_word(&delayOffset, value);
-        }
-
-        static int16_t getExposure()
-        {
-            return validateExposure(eeprom_read_word(&exposureOffset));
-        }
-
-        static int16_t validateExposure(int16_t value)
-        {
-            return 100 <= value && value <= 500 && value % 100 == 0
-                ? value
-                : 100; // use default
-        }
-
-        static void setExposure(int16_t value)
-        {
-            eeprom_update_word(&exposureOffset, value);
-        }
-
-        static int16_t getVideoSpeed()
-        {
-            return validateVideoSpeed(eeprom_read_word(&videoSpeedOffset));
-        }
-
-        static int16_t validateVideoSpeed(int16_t value)
-        {
-            return 
-                (-MAX_PWM <= value && value <= -MIN_PWM) ||
-                ( MIN_PWM <= value && value <=  MAX_PWM)
-                    ? value
-                    : 100; // use default
-        }
-
-        static void setVideoSpeed(int16_t value)
-        {
-            eeprom_update_word(&videoSpeedOffset, value);
-        }
-
-        // Returns value in range from lowNonstopSpeed to highNonstopSpeed.
-        static int16_t getNonstopSpeed()
-        {
-            return validateNonstopSpeed(eeprom_read_word(&nonstopSpeedOffset));
-        }
-
-        static int16_t validateNonstopSpeed(int16_t value)
-        {
-            return lowNonstopSpeed <= value && value <= highNonstopSpeed
-                    ? value
-                    : lowNonstopSpeed; // use default
-        }
-
-        // Returns speed depending on current number of steps
-        static int16_t getNativeNonstopSpeed()
-        {
-            return SpeedValidator::validate(getNonstopSpeed() / getSteps());
-        }
-
-        static int16_t getLowNativeNonstopSpeed()
-        {
-            int16_t speed = lowNonstopSpeed / getSteps();
-            return SpeedValidator::validate(speed);
-        }
-
-        static int16_t getHighNativeNonstopSpeed()
-        {
-            int16_t speed = highNonstopSpeed / getSteps();
-            return SpeedValidator::validate(speed);
-        }
-
-        static void setNonstopSpeed(int16_t value)
-        {
-            eeprom_update_word(&nonstopSpeedOffset, value);
         }
 };
 
@@ -509,7 +367,7 @@ class Measurer
                     if (_measurer.getState() == Measured)
                     {
                         Serial.println(_measurer.getOutput());
-                        _pwm += 10;
+                        _pwm += delta;
                         if (_pwm > MAX_PWM)
                         {
                             _state = Measured;
@@ -559,15 +417,7 @@ class Worker
             {
                 case 1:
                     if (_measurer.getState() == Measured)
-                    {
-                        _stage++;
-                        Serial.println("15000 Гц");
-                        SetPinFrequencySafe(MOTOR1, 15000);
-                        SetPinFrequencySafe(MOTOR2, 15000);
-                        MIN_PWM = 60;
-
-                        _measurer.measure();
-                    }
+                        setStage(2);
                     return;
 
                 case 2:
@@ -575,12 +425,9 @@ class Worker
             }
         }
 
-        void start()
+        void start(int stage = 1)
         {
-            _stage = 1;
-            MIN_PWM = 10;
-            Serial.println("Стандартная частота");
-            _measurer.measure();
+            setStage(stage);
         }
 
         void cancel()
@@ -592,6 +439,30 @@ class Worker
     private:
         int _stage = 0;
         Measurer _measurer;
+
+        void setStage(int stage)
+        {
+            switch (stage)
+            {
+                case 1:
+                    Serial.println("Стандартная частота");
+                    _stage = 1;
+                    MIN_PWM = 10;
+                    break;
+
+                case 2:
+                    Serial.println("15000 Гц");
+                    SetPinFrequencySafe(MOTOR1, 15000);
+                    SetPinFrequencySafe(MOTOR2, 15000);
+                    MIN_PWM = 60;
+                    break;
+
+                default:
+                    return;
+            }
+            
+            _measurer.measure();
+        }
 };
 Worker worker;
 
@@ -614,7 +485,7 @@ void loop()
     if (enc.press())
     {
         if (worker.getStage() == 0)
-            worker.start();
+            worker.start(2);
         else
             worker.cancel();
     }

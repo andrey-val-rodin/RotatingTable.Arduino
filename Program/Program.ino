@@ -294,6 +294,47 @@ if (lastHighSteps != getSteps())
         {
             eeprom_update_byte(&menuIndexOffset, value);
         }
+
+    private:
+        char getTimeOfTurn(int16_t speed)
+        {
+            static const char buff[] = { 97, 89, 81, 75, 69, 64, 59, 56, 52, 49, 47, 44, 42, 40, 38, 36, 35, 34, 32, 31, 30, 29, 28, 27, 26, 26, 25, 24, 24, 23, 22, 23, 23, 22, 22 };
+            int index = speed - MIN_PWM;
+            if (index < 35)
+                return buff[index];
+            else if (index < 38)
+                return 21;
+            else if (index < 41)
+                return 20;
+            else if (index < 44)
+                return 19;
+            else if (index < 48)
+                return 18;
+            else if (index < 53)
+                return 17;
+            else if (index < 58)
+                return 16;
+            else if (index < 65)
+                return 15;
+            else if (index < 73)
+                return 14;
+            else if (index < 83)
+                return 13;
+            else if (index < 93)
+                return 12;
+            else if (index < 103)
+                return 11;
+            else if (index < 115)
+                return 10;
+            else if (index < 126)
+                return 9;
+            else if (index < 140)
+                return 8;
+            else if (index < 163)
+                return 7;
+            else
+                return 6;
+        }
 };
 
 class Menu
