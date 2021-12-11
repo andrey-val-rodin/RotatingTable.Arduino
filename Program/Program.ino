@@ -123,18 +123,20 @@ class SpeedValidator
         }
 };
 
+int lastLowSteps = 0; // remove this!!!!!
+int lastHighSteps = 0;
 class Settings
 {
     public:
-        static const int32_t lowNonstopSpeed = MIN_PWM * 60;
-        static const int32_t highNonstopSpeed = lowNonstopSpeed * 6;
+        static const int32_t lowNonstopSpeed = 1200;
+        static const int32_t highNonstopSpeed = 12000;
         
         static int16_t getSteps()
         {
-            return verifySteps(eeprom_read_word(&stepsOffset));
+            return validateSteps(eeprom_read_word(&stepsOffset));
         }
 
-        static int16_t verifySteps(int16_t value)
+        static int16_t validateSteps(int16_t value)
         {
             return FindInSteps(value) >= 0
                 ? value
@@ -148,7 +150,7 @@ class Settings
 
         static char getAcceleration()
         {
-            return verifyAcceleration(eeprom_read_byte(&accelerationOffset));
+            return validateAcceleration(eeprom_read_byte(&accelerationOffset));
         }
 
         // Returns number of graduations for acceleration and deceleration from min to max PWM and vice versa.
@@ -165,7 +167,7 @@ class Settings
             return result; // value in range from 80 to 440 when GRADUATIONS = 4320
         }
 
-        static char verifyAcceleration(char value)
+        static char validateAcceleration(char value)
         {
             return 1 <= value && value <= 10
                 ? value
@@ -179,10 +181,10 @@ class Settings
 
         static int16_t getDelay()
         {
-            return verifyDelay(eeprom_read_word(&delayOffset));
+            return validateDelay(eeprom_read_word(&delayOffset));
         }
 
-        static int16_t verifyDelay(int16_t value)
+        static int16_t validateDelay(int16_t value)
         {
             return 0 <= value && value <= 5000 && value % 100 == 0
                 ? value
@@ -196,10 +198,10 @@ class Settings
 
         static int16_t getExposure()
         {
-            return verifyExposure(eeprom_read_word(&exposureOffset));
+            return validateExposure(eeprom_read_word(&exposureOffset));
         }
 
-        static int16_t verifyExposure(int16_t value)
+        static int16_t validateExposure(int16_t value)
         {
             return 100 <= value && value <= 500 && value % 100 == 0
                 ? value
@@ -213,10 +215,10 @@ class Settings
 
         static int16_t getVideoSpeed()
         {
-            return verifyVideoSpeed(eeprom_read_word(&videoSpeedOffset));
+            return validateVideoSpeed(eeprom_read_word(&videoSpeedOffset));
         }
 
-        static int16_t verifyVideoSpeed(int16_t value)
+        static int16_t validateVideoSpeed(int16_t value)
         {
             return 
                 (-MAX_PWM <= value && value <= -MIN_PWM) ||
@@ -233,10 +235,10 @@ class Settings
         // Returns value in range from lowNonstopSpeed to highNonstopSpeed.
         static int16_t getNonstopSpeed()
         {
-            return verifyNonstopSpeed(eeprom_read_word(&nonstopSpeedOffset));
+            return validateNonstopSpeed(eeprom_read_word(&nonstopSpeedOffset));
         }
 
-        static int16_t verifyNonstopSpeed(int16_t value)
+        static int16_t validateNonstopSpeed(int16_t value)
         {
             return lowNonstopSpeed <= value && value <= highNonstopSpeed
                     ? value
@@ -251,21 +253,24 @@ class Settings
 
         static int16_t getLowNativeNonstopSpeed()
         {
-          /*
-            float f = (float) lowNonstopSpeed / getSteps();
-            int16_t i = f;
-            if (f > i)
-                i++;
-          */
-            int16_t i = lowNonstopSpeed / getSteps();
-Serial.println("low=" + String(SpeedValidator::validate(i)) + "  native=" + String(lowNonstopSpeed));
-            return SpeedValidator::validate(i);
+            int16_t speed = lowNonstopSpeed / getSteps();
+if (lastLowSteps != getSteps())
+{
+  Serial.println("low = " + String(SpeedValidator::validate(speed)) + "\tspeed = " + String(speed) + "\t\tnative = " + String(lowNonstopSpeed));
+  lastLowSteps = getSteps();
+}
+            return SpeedValidator::validate(speed);
         }
 
         static int16_t getHighNativeNonstopSpeed()
         {
-Serial.println("high=" + String(SpeedValidator::validate(highNonstopSpeed / getSteps())) + "  native=" + String(highNonstopSpeed));
-            return SpeedValidator::validate(highNonstopSpeed / getSteps());
+            int16_t speed = highNonstopSpeed / getSteps();
+if (lastHighSteps != getSteps())
+{
+  Serial.println("high = " + String(SpeedValidator::validate(speed)) + "\tspeed = " + String(speed) + "\t\tnative = " + String(highNonstopSpeed));
+  lastHighSteps = getSteps();
+}
+            return SpeedValidator::validate(speed);
         }
 
         static void setNonstopSpeed(int16_t value)
@@ -275,10 +280,10 @@ Serial.println("high=" + String(SpeedValidator::validate(highNonstopSpeed / getS
 
         static char getMenuIndex()
         {
-            return verifyMenuIndex(eeprom_read_byte(&menuIndexOffset));
+            return validateMenuIndex(eeprom_read_byte(&menuIndexOffset));
         }
 
-        static char verifyMenuIndex(char value)
+        static char validateMenuIndex(char value)
         {
             return 0 <= value && value <= MenuItemsDef::topItemsLength
                 ? value
@@ -1016,6 +1021,7 @@ void Runner::runNonstop()
                 if (mover.getCurrentSpeed() - d < Settings::getLowNativeNonstopSpeed())
                     d = mover.getCurrentSpeed() - Settings::getLowNativeNonstopSpeed();
 
+Serial.println("Decrease speed. current speed = " + String(mover.getCurrentSpeed()) + " delta = " + String(d));
                 mover.changeSpeed(-d);
                 needToStoreNewSpeed = true;
             }
@@ -1028,6 +1034,7 @@ void Runner::runNonstop()
                 if (mover.getCurrentSpeed() + d > Settings::getHighNativeNonstopSpeed())
                     d = Settings::getHighNativeNonstopSpeed() - mover.getCurrentSpeed();
                     
+Serial.println("Increase speed. current speed = " + String(mover.getCurrentSpeed()) + " delta = " + String(d));
                 mover.changeSpeed(d);
                 needToStoreNewSpeed = true;
             }
@@ -1088,7 +1095,11 @@ void Runner::runNonstop()
     if (isRunning && currentState != Beginning && currentState != Correction && mover.isStopped())
     {
         if (needToStoreNewSpeed)
+        {
+Serial.println("Store new speed = " + String(mover.getMaxSpeed() * Settings::getSteps()));
             Settings::setNonstopSpeed(mover.getMaxSpeed() * Settings::getSteps());
+        }
+
         if (needToCheckError)
         {
             timer = millis();
