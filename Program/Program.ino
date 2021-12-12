@@ -1121,7 +1121,7 @@ void Runner::runNonstop()
         finalize();
         return;
     }
-    else if (enc.turn())
+    else if (enc.turn() && currentState != Correction)
     {
         if (enc.left())
         {
