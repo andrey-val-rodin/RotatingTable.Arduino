@@ -17,6 +17,9 @@
 #define GRADUATIONS 4320 // number of graduations per turn
 #define DEGREE (GRADUATIONS / 360)
 
+// Uncomment below to enable debug output.
+//#define DEBUG_MODE
+
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
@@ -29,7 +32,7 @@ char EEMEM accelerationOffset;
 int16_t EEMEM delayOffset;
 int16_t EEMEM exposureOffset;
 int16_t EEMEM videoSpeedOffset;
-int16_t EEMEM nonstopSpeedOffset;
+float EEMEM nonstopFrequencyOffset;
 char EEMEM menuIndexOffset;
 
 const char stepsLength = 22;
@@ -123,13 +126,15 @@ class SpeedValidator
         }
 };
 
-int lastLowSteps = 0; // remove this!!!!!
+#ifdef DEBUG_MODE
+int lastLowSteps = 0;
 int lastHighSteps = 0;
+#endif
 class Settings
 {
     public:
-        static const int32_t lowNonstopSpeed = 1200;
-        static const int32_t highNonstopSpeed = 12000;
+        static const float lowNonstopFrequency = 0.5;
+        static const float highNonstopFrequency = 3.0;
         
         static int16_t getSteps()
         {
@@ -154,9 +159,9 @@ class Settings
         }
 
         // Returns number of graduations for acceleration and deceleration from min to max PWM and vice versa.
-        // Function converts current user-friendly value 1-10 to this native value.
-        // Note that native value shouldn't be less than 80 when GRADUATIONS = 4320.
-        static int getNativeAcceleration()
+        // Function converts current user-friendly value 1-10 to this value.
+        // Note that real value shouldn't be less than 80 when GRADUATIONS = 4320.
+        static int getRealAcceleration()
         {
             int result = getAcceleration();
             result = abs(result - 11); // reverse
@@ -232,50 +237,71 @@ class Settings
             eeprom_update_word(&videoSpeedOffset, value);
         }
 
-        // Returns value in range from lowNonstopSpeed to highNonstopSpeed.
-        static int16_t getNonstopSpeed()
+        static float getNonstopFrequency()
         {
-            return validateNonstopSpeed(eeprom_read_word(&nonstopSpeedOffset));
+            return validateNonstopFrequency(eeprom_read_float(&nonstopFrequencyOffset));
         }
 
-        static int16_t validateNonstopSpeed(int16_t value)
+        static float validateNonstopFrequency(float value)
         {
-            return lowNonstopSpeed <= value && value <= highNonstopSpeed
-                    ? value
-                    : lowNonstopSpeed; // use default
+            return lowNonstopFrequency <= value && value <= highNonstopFrequency
+                ? value
+                : lowNonstopFrequency; // use default
+        }
+        
+        static int16_t getRealNonstopSpeed()
+        {
+            float frequency = getNonstopFrequency();
+            int16_t result = frequencyToSpeed(frequency);
+#ifdef DEBUG_MODE
+            Serial.println("frequency from EEPROM = " + String(frequency) + "\tspeed = " + String(result));
+#endif
+            return SpeedValidator::validate(result);
         }
 
-        // Returns speed depending on current number of steps
-        static int16_t getNativeNonstopSpeed()
+        static int16_t getLowRealNonstopSpeed()
         {
-            return SpeedValidator::validate(getNonstopSpeed() / getSteps());
+            float frequency = lowNonstopFrequency;
+            int16_t result = SpeedValidator::validate(frequencyToSpeed(frequency));
+#ifdef DEBUG_MODE
+            if (lastLowSteps != getSteps())
+            {
+                Serial.println("low speed = " + String(result));
+                lastLowSteps = getSteps();
+            }
+#endif
+            return result;
         }
 
-        static int16_t getLowNativeNonstopSpeed()
+        static int16_t getHighRealNonstopSpeed()
         {
-            int16_t speed = lowNonstopSpeed / getSteps();
-if (lastLowSteps != getSteps())
-{
-  Serial.println("low = " + String(SpeedValidator::validate(speed)) + "\tspeed = " + String(speed) + "\t\tnative = " + String(lowNonstopSpeed));
-  lastLowSteps = getSteps();
-}
-            return SpeedValidator::validate(speed);
+            float frequency = highNonstopFrequency;
+            int16_t result = SpeedValidator::validate(frequencyToSpeed(frequency));
+#ifdef DEBUG_MODE
+            if (lastHighSteps != getSteps())
+            {
+                Serial.println("high speed = " + String(result));
+                lastHighSteps = getSteps();
+            }
+#endif
+            return result;
         }
 
-        static int16_t getHighNativeNonstopSpeed()
+        static void setNonstopFrequency(float value)
         {
-            int16_t speed = highNonstopSpeed / getSteps();
-if (lastHighSteps != getSteps())
-{
-  Serial.println("high = " + String(SpeedValidator::validate(speed)) + "\tspeed = " + String(speed) + "\t\tnative = " + String(highNonstopSpeed));
-  lastHighSteps = getSteps();
-}
-            return SpeedValidator::validate(speed);
+#ifdef DEBUG_MODE
+            Serial.println("Store frequency in EEPROM = " + String(value));
+#endif
+            eeprom_update_float(&nonstopFrequencyOffset, value);
         }
-
+        
         static void setNonstopSpeed(int16_t value)
         {
-            eeprom_update_word(&nonstopSpeedOffset, value);
+            float frequency = speedToFrequency(value);
+#ifdef DEBUG_MODE
+            Serial.println("Store frequency = " + String(frequency));
+#endif
+            setNonstopFrequency(frequency);
         }
 
         static char getMenuIndex()
@@ -296,7 +322,7 @@ if (lastHighSteps != getSteps())
         }
 
     private:
-        char getTimeOfTurn(int16_t speed)
+        static float getTimeOfTurn(int16_t speed)
         {
             static const char buff[] = { 97, 89, 81, 75, 69, 64, 59, 56, 52, 49, 47, 44, 42, 40, 38, 36, 35, 34, 32, 31, 30, 29, 28, 27, 26, 26, 25, 24, 24, 23, 22, 23, 23, 22, 22 };
             int index = speed - MIN_PWM;
@@ -334,6 +360,45 @@ if (lastHighSteps != getSteps())
                 return 7;
             else
                 return 6;
+        }
+
+        static float getSpeedOfTurn(float time)
+        {
+            int speed = MAX_PWM;
+            while (getTimeOfTurn(speed) < time && speed > MIN_PWM)
+            {
+                speed--;
+            }
+
+            return speed;
+        }
+
+        static float speedToFrequency(int16_t speed)
+        {
+            float steps = getSteps();
+            return steps / getTimeOfTurn(speed);
+        }
+
+        static int16_t frequencyToSpeed(float frequency)
+        {
+            float steps = getSteps();
+            float time = steps / frequency;
+            float result = getSpeedOfTurn(time);
+            return result + 0.5; // rounded
+        }
+
+        static void eeprom_update_float(int addr, float value)
+        { 
+            byte *x = (byte *)&value;
+            for (byte i = 0; i < 4; i++ ) eeprom_update_byte(i+addr, x[i]);
+        }
+
+        static float eeprom_read_float(int addr)
+        {   
+            byte x[4];
+            for (byte i = 0; i < 4; i++) x[i] = eeprom_read_byte(i+addr);
+            float *result = (float *)&x;
+            return result[0];
         }
 };
 
@@ -614,7 +679,7 @@ class Mover
             if( _state == Run || _state == RunAcc || _state == RunDec)
             {
                 // Calculate stop point
-                float decelerationLength = Settings::getNativeAcceleration();
+                float decelerationLength = Settings::getRealAcceleration();
                 float graduationsToStop = (_currentSpeed - MIN_PWM) * decelerationLength /
                     (MAX_PWM - MIN_PWM);
                 _graduations = getCurrentPos() + graduationsToStop;
@@ -706,7 +771,7 @@ class Mover
         {
             // Use linear function to accelerate
             float x = _currentPos;
-            float accelerationLength = Settings::getNativeAcceleration();
+            float accelerationLength = Settings::getRealAcceleration();
             float currentSpeed = MIN_PWM + x * (MAX_PWM - MIN_PWM) / accelerationLength;
             _currentSpeed = validateSpeed(currentSpeed);
         }
@@ -715,7 +780,7 @@ class Mover
         {
             // Use linear function to decelerate
             float x = _graduations - _currentPos - getFinalDistance();
-            float decelerationLength = Settings::getNativeAcceleration();
+            float decelerationLength = Settings::getRealAcceleration();
             float currentSpeed = MIN_PWM + x * (MAX_PWM - MIN_PWM) / decelerationLength;
             _currentSpeed = validateSpeed(currentSpeed);
         }
@@ -934,8 +999,10 @@ void Runner::runAutomatic()
             timer -= completeStopDelay;
         else
         {
-Serial.println(mover.getCurrentPos());
-Serial.println("Error = " + String(error));
+#ifdef DEBUG_MODE
+            Serial.println(mover.getCurrentPos());
+            Serial.println("Error = " + String(error));
+#endif
             mover.move(error, MIN_PWM);
         }
         currentState = Move;
@@ -1029,8 +1096,10 @@ void Runner::runManual()
         int16_t error = stepGraduations - mover.getCurrentPos();
         if (error != 0)
         {
-Serial.println(mover.getCurrentPos());
-Serial.println("Error = " + String(error));
+#ifdef DEBUG_MODE
+            Serial.println(mover.getCurrentPos());
+            Serial.println("Error = " + String(error));
+#endif
             mover.move(error, MIN_PWM);
         }
         currentState = Move;
@@ -1056,26 +1125,24 @@ void Runner::runNonstop()
     {
         if (enc.left())
         {
-            if (mover.getCurrentSpeed() > Settings::getLowNativeNonstopSpeed())
+            if (mover.getCurrentSpeed() > Settings::getLowRealNonstopSpeed())
             {
                 int d = delta;
-                if (mover.getCurrentSpeed() - d < Settings::getLowNativeNonstopSpeed())
-                    d = mover.getCurrentSpeed() - Settings::getLowNativeNonstopSpeed();
+                if (mover.getCurrentSpeed() - d < Settings::getLowRealNonstopSpeed())
+                    d = mover.getCurrentSpeed() - Settings::getLowRealNonstopSpeed();
 
-Serial.println("Decrease speed. current speed = " + String(mover.getCurrentSpeed()) + " delta = " + String(d));
                 mover.changeSpeed(-d);
                 needToStoreNewSpeed = true;
             }
         }
         else if (enc.right())
         {
-            if (mover.getCurrentSpeed() < Settings::getHighNativeNonstopSpeed())
+            if (mover.getCurrentSpeed() < Settings::getHighRealNonstopSpeed())
             {
                 int d = delta;
-                if (mover.getCurrentSpeed() + d > Settings::getHighNativeNonstopSpeed())
-                    d = Settings::getHighNativeNonstopSpeed() - mover.getCurrentSpeed();
-                    
-Serial.println("Increase speed. current speed = " + String(mover.getCurrentSpeed()) + " delta = " + String(d));
+                if (mover.getCurrentSpeed() + d > Settings::getHighRealNonstopSpeed())
+                    d = Settings::getHighRealNonstopSpeed() - mover.getCurrentSpeed();
+
                 mover.changeSpeed(d);
                 needToStoreNewSpeed = true;
             }
@@ -1105,7 +1172,7 @@ Serial.println("Increase speed. current speed = " + String(mover.getCurrentSpeed
         timer = millis();
         currentState = Exposure;
         needToCheckError = true;
-        mover.move(GRADUATIONS, Settings::getNativeNonstopSpeed());
+        mover.move(GRADUATIONS, Settings::getRealNonstopSpeed());
         return;
     }
 
@@ -1137,8 +1204,11 @@ Serial.println("Increase speed. current speed = " + String(mover.getCurrentSpeed
     {
         if (needToStoreNewSpeed)
         {
-Serial.println("Store new speed = " + String(mover.getMaxSpeed() * Settings::getSteps()));
-            Settings::setNonstopSpeed(mover.getMaxSpeed() * Settings::getSteps());
+#ifdef DEBUG_MODE
+            Serial.println("Store new speed = " + String(mover.getMaxSpeed()));
+#endif
+            Settings::setNonstopSpeed(mover.getMaxSpeed());
+            needToStoreNewSpeed = false;
         }
 
         if (needToCheckError)
@@ -1156,8 +1226,10 @@ Serial.println("Store new speed = " + String(mover.getMaxSpeed() * Settings::get
         int16_t error = GRADUATIONS - mover.getCurrentPos();
         if (error != 0)
         {
-Serial.println(mover.getCurrentPos());
-Serial.println("Error = " + String(error));
+#ifdef DEBUG_MODE
+            Serial.println(mover.getCurrentPos());
+            Serial.println("Error = " + String(error));
+#endif
             mover.move(error, MIN_PWM);
             currentState = Waiting;
             needToCheckError = false;
@@ -1283,8 +1355,10 @@ void Runner::runRotate()
             
         if (error != 0)
         {
-Serial.println(mover.getCurrentPos());
-Serial.println("Error = " + String(error));
+#ifdef DEBUG_MODE
+            Serial.println(mover.getCurrentPos());
+            Serial.println("Error = " + String(error));
+#endif
             mover.move(error, MIN_PWM);
         }
         currentState = Move;
@@ -1334,7 +1408,9 @@ void setup()
     SetPinFrequencySafe(MOTOR1, 15000);
     SetPinFrequencySafe(MOTOR2, 15000);
 
-  Serial.begin(9600);
+#ifdef DEBUG_MODE
+    Serial.begin(9600);
+#endif
 }
 
 void loop()
