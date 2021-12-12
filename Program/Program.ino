@@ -386,20 +386,6 @@ class Settings
             float result = getSpeedOfTurn(time);
             return result + 0.5; // rounded
         }
-
-        static void eeprom_update_float(int addr, float value)
-        { 
-            byte *x = (byte *)&value;
-            for (byte i = 0; i < 4; i++ ) eeprom_update_byte(i+addr, x[i]);
-        }
-
-        static float eeprom_read_float(int addr)
-        {   
-            byte x[4];
-            for (byte i = 0; i < 4; i++) x[i] = eeprom_read_byte(i+addr);
-            float *result = (float *)&x;
-            return result[0];
-        }
 };
 
 class Menu
