@@ -1383,6 +1383,7 @@ void Runner::runRotate()
     {
         selector.menu.display("Rotation...", "<-  ->");
 #ifdef DEBUG_MODE
+        mover.resetAbsolutePos();
         total = 0;
 #endif
         isRunning = true;

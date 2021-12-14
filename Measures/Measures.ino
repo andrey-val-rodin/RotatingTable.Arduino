@@ -1,5 +1,8 @@
 #include <Encoder.h>
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
 #include <EncButton.h>
+#pragma GCC diagnostic pop
 #include <PWM.h>
 
 #define MOTOR1 10
@@ -17,17 +20,17 @@ Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
 EncButton<EB_TICK, 12, 13, 11> enc; // pins 11, 12, 13
 
-class SpeedValidator
+class PWMValidator
 {
     public:
-        static int validate(int speed)
+        static int validate(int pwm)
         {
-            if (speed > MAX_PWM)
-                speed = MAX_PWM;
-            else if (speed < MIN_PWM)
-                speed = MIN_PWM;
+            if (pwm > MAX_PWM)
+                pwm = MAX_PWM;
+            else if (pwm < MIN_PWM)
+                pwm = MIN_PWM;
 
-            return speed;
+            return pwm;
         }
 };
 
@@ -41,8 +44,8 @@ class Settings
 
         // Returns number of graduations for acceleration and deceleration from min to max PWM and vice versa.
         // Function converts current user-friendly value 1-10 to this native value.
-        // Note that native value shouldn't be less than 80 when GRADUATIONS = 4320.
-        static int getNativeAcceleration()
+        // Note that real value shouldn't be less than 80 when GRADUATIONS = 4320.
+        static int getRealAcceleration()
         {
             int result = getAcceleration();
             result = abs(result - 11); // reverse
@@ -61,6 +64,8 @@ class Mover
         {
             Stop,
             Move,
+            Stopping,
+            Correction,
             RunAcc,
             Run,
             RunDec
@@ -71,6 +76,8 @@ class Mover
             switch (_state)
             {
                 case Move:
+                case Stopping:
+                case Correction:
                     tickMove();
                     break;
                     
@@ -78,6 +85,9 @@ class Mover
                 case RunAcc:
                 case RunDec:
                     tickRun();
+                    break;
+
+                default:
                     break;
             }
         }
@@ -87,28 +97,28 @@ class Mover
             return _state;
         }
 
-        void move(int graduations, int maxSpeed = MAX_PWM)
+        void move(int graduations, int maxPWM = MAX_PWM)
         {
             if (!isStopped())
                 return;
 
             _graduations = abs(graduations);
             _forward = graduations > 0;
-            _currentSpeed = MIN_PWM;
-            _maxSpeed = maxSpeed;
-            encoder.readAndReset();
+            _currentPWM = MIN_PWM;
+            _maxPWM = maxPWM;
+            _accumAbsolutePos += encoder.readAndReset();
             _state = Move;
         }
 
-        void run(int speed)
+        void run(int pwm)
         {
             if (!isStopped())
                 return;
 
-            _maxSpeed = abs(speed);
-            _forward = speed > 0;
-            _currentSpeed = MIN_PWM;
-            encoder.readAndReset();
+            _maxPWM = abs(pwm);
+            _forward = pwm > 0;
+            _currentPWM = MIN_PWM;
+            _accumAbsolutePos += encoder.readAndReset();
             _state = RunAcc;
         }
 
@@ -121,11 +131,11 @@ class Mover
 
         void softStop()
         {
-            if( _state == Run || _state == RunAcc || _state == RunDec)
+            if (_state == Run)
             {
                 // Calculate stop point
-                float decelerationLength = Settings::getNativeAcceleration();
-                float graduationsToStop = (_currentSpeed - MIN_PWM) * decelerationLength /
+                float decelerationLength = Settings::getRealAcceleration();
+                float graduationsToStop = (_currentPWM - MIN_PWM) * decelerationLength /
                     (MAX_PWM - MIN_PWM);
                 _graduations = getCurrentPos() + graduationsToStop;
                 _state = RunDec; // deceleration state
@@ -146,88 +156,174 @@ class Mover
         }
 
         // Returns current PWM
-        inline int getCurrentSpeed()
+        inline int getCurrentPWM()
         {
-            return _currentSpeed;
+            return _currentPWM;
         }
 
         // Returns maximum PWM
-        inline int getMaxSpeed()
+        inline int getMaxPWM()
         {
-            return _maxSpeed;
+            return _maxPWM;
         }
 
-        void changeSpeed(int delta)
+        void changePWM(int delta)
         {
             switch (_state)
             {
                 case Move:
-                    if (_currentSpeed == _maxSpeed)
+                    if (_currentPWM == _maxPWM)
                     {
-                        _maxSpeed += delta;
-                        _maxSpeed = SpeedValidator::validate(_maxSpeed);
-                        _currentSpeed = _maxSpeed;
-                        analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
+                        _maxPWM += delta;
+                        _maxPWM = PWMValidator::validate(_maxPWM);
+                        _currentPWM = _maxPWM;
+                        analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
                     }
                     break;
                     
                 case Run:
-                    _maxSpeed += delta;
-                    _maxSpeed = SpeedValidator::validate(_maxSpeed);
-                    _currentSpeed = _maxSpeed;
-                    analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
+                    _maxPWM += delta;
+                    _maxPWM = PWMValidator::validate(_maxPWM);
+                    _currentPWM = _maxPWM;
+                    analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
+                    break;
+
+                default:
                     break;
             }
         }
 
-        // Returns graduation count passed from starting point
         int getCurrentPos()
         {
-            int32_t pos = abs(encoder.read());
-            return pos;
+            int32_t pos = encoder.read();
+            return abs(pos);
+        }
+
+        // Returns graduation count passed from starting point. Can be negative
+        int32_t getAbsolutePos()
+        {
+            return _accumAbsolutePos + encoder.read();
+        }
+
+        void resetAbsolutePos()
+        {
+            encoder.readAndReset();
+            _accumAbsolutePos = 0;
         }
 
     private:
         State _state = Stop;
         int _graduations;
         bool _forward;
-        int _maxSpeed = MAX_PWM;
+        int _maxPWM = MAX_PWM;
         int _currentPos;
-        int _currentSpeed;
-
+        int _lastPos;
+        int32_t _accumAbsolutePos;
+        int _currentPWM;
+        unsigned long _timer;
+        unsigned char _timePartCount;
+        
         void tickMove()
         {
             _currentPos = getCurrentPos();
             if (_currentPos >= _graduations)
             {
-                stop();
+                switch (_state)
+                {
+                    case Move:
+                        stop();
+                        _state = Stopping;
+                        _timePartCount = 0;
+                        _lastPos = _currentPos;
+                        _timer = millis();
+                        return;
+
+                    case Correction:
+                        // finish
+                        stop();
+                        return;
+
+                    default:
+                        // continue
+                        break;
+                }
+            }
+            else if (_state == Move || _state == Correction)
+            {
+                if (_currentPos < _graduations / 2)
+                    accelerate();
+                else
+                    decelerate();
+    
+                analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
                 return;
             }
 
-            if (_currentPos < _graduations / 2)
-                accelerate();
-            else
-                decelerate();
+            // Wait until table die
+            if (_state == Stopping && millis() - _timer >= 10)
+            {
+                if (_currentPos == _lastPos)
+                {
+                    _timePartCount++;
+                }
+                else
+                {
+                    _timePartCount = 0;
+                    _lastPos = _currentPos;
+                }
 
-            analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
+                if (_timePartCount >= 10)
+                {
+                    // Table has been at rest for the last 10 times
+                    makeCorrection();
+                }
+                else
+                {
+                    // continue
+                    _timer = millis();
+                }
+            }
         }
 
         void accelerate()
         {
             // Use linear function to accelerate
             float x = _currentPos;
-            float accelerationLength = Settings::getNativeAcceleration();
-            float currentSpeed = MIN_PWM + x * (MAX_PWM - MIN_PWM) / accelerationLength;
-            _currentSpeed = validateSpeed(currentSpeed);
+            float accelerationLength = Settings::getRealAcceleration();
+            float currentPWM = MIN_PWM + x * (MAX_PWM - MIN_PWM) / accelerationLength;
+            _currentPWM = validatePWM(currentPWM);
         }
 
         void decelerate()
         {
             // Use linear function to decelerate
             float x = _graduations - _currentPos - getFinalDistance();
-            float decelerationLength = Settings::getNativeAcceleration();
-            float currentSpeed = MIN_PWM + x * (MAX_PWM - MIN_PWM) / decelerationLength;
-            _currentSpeed = validateSpeed(currentSpeed);
+            float decelerationLength = Settings::getRealAcceleration();
+            float currentPWM = MIN_PWM + x * (MAX_PWM - MIN_PWM) / decelerationLength;
+            _currentPWM = validatePWM(currentPWM);
+        }
+
+        void makeCorrection()
+        {
+            int error = _graduations - _currentPos;
+            if (error == 0)
+            {
+                // No correction needed, finish
+                stop();
+                return;
+            }
+            else
+            {
+                // Make correction
+                if (!isForward())
+                    error = -error;
+#ifdef DEBUG_MODE
+                Serial.println("Error = " + String(error) + ", correction...");
+#endif
+                stop();
+                move(error, MIN_PWM);
+                _state = Correction;
+            }
         }
 
         // End of the step we should go with MIN_PWM
@@ -254,30 +350,35 @@ class Mover
             switch (_state)
             {
                 case RunAcc:
+                    _currentPos = getCurrentPos();
                     accelerate();
-                    analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
-                    if (_currentSpeed == _maxSpeed)
+                    analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
+                    if (_currentPWM >= _maxPWM)
                         _state = Run;
                     break;
                     
                 case RunDec:
+                    _currentPos = getCurrentPos();
                     decelerate();
-                    if (_currentSpeed <= MIN_PWM)
+                    if (_currentPWM <= MIN_PWM)
                         stop();
                     else
-                        analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
+                        analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
+                    break;
+
+                default:
                     break;
             }
         }
 
-        int validateSpeed(int speed)
+        int validatePWM(int pwm)
         {
-            if (speed > _maxSpeed)
-                speed = _maxSpeed;
-            else if (speed < MIN_PWM)
-                speed = MIN_PWM;
+            if (pwm > _maxPWM)
+                pwm = _maxPWM;
+            else if (pwm < MIN_PWM)
+                pwm = MIN_PWM;
 
-            return speed;
+            return pwm;
         }
 };
 Mover mover;
@@ -292,7 +393,7 @@ enum State
 class TurnMeasurer
 {
     public:
-        inline getState()
+        inline State getState()
         {
             return _state;
         }
@@ -324,7 +425,6 @@ class TurnMeasurer
     
         String getOutput()
         {
-            char strBuf[40];
             float time = (_stop - _start) / 1000.0;
             return String(_pwm) + "\t" + String(time);
         }
@@ -349,7 +449,7 @@ class TurnMeasurer
 class Measurer
 {
     public:
-        inline getState()
+        inline State getState()
         {
             return _state;
         }
@@ -360,9 +460,6 @@ class Measurer
             
             switch (_state)
             {
-                case Waiting:
-                    return;
-
                 case Measuring:
                     if (_measurer.getState() == Measured)
                     {
@@ -378,6 +475,9 @@ class Measurer
                             _measurer.measure(_pwm);
                         }
                     }
+                    return;
+
+                default:
                     return;
             }
         }
