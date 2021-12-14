@@ -1,8 +1,10 @@
 #include <Encoder.h>
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
 #include <EncButton.h>
+#pragma GCC diagnostic pop
 #include <LiquidCrystal_I2C.h>
 #include <PWM.h>
-#include <avr/eeprom.h>
 
 #define MOTOR1 10
 #define MOTOR2 9
@@ -27,20 +29,20 @@ EncButton<EB_TICK, 12, 13, 11> enc; // pins 11, 12, 13
 EncButton<EB_TICK, 7> photoButton;  // pin 7
 EncButton<EB_TICK, 4> nextButton;   // pin 4
 
-int16_t EEMEM stepsOffset;
-char EEMEM accelerationOffset;
-int16_t EEMEM delayOffset;
-int16_t EEMEM exposureOffset;
-int16_t EEMEM videoSpeedOffset;
+uint16_t EEMEM stepsOffset;
+unsigned char EEMEM accelerationOffset;
+uint16_t EEMEM delayOffset;
+uint16_t EEMEM exposureOffset;
+uint16_t EEMEM videoPWMOffset;
 float EEMEM nonstopFrequencyOffset;
-char EEMEM menuIndexOffset;
+unsigned char EEMEM menuIndexOffset;
 
-const char stepsLength = 22;
+const unsigned char stepsLength = 22;
 const int16_t steps[stepsLength] =
     { 2, 4, 5, 6, 8, 9, 10, 12, 15, 18, 20, 24, 30, 36, 40, 45, 60, 72, 90, 120, 180, 360 };
 char FindInSteps(int16_t numberOfSteps)
 {
-    for (char i = 0; i < stepsLength; i++)
+    for (unsigned char i = 0; i < stepsLength; i++)
     {
         if (steps[i] == numberOfSteps)
             return i;
@@ -52,7 +54,7 @@ char FindInSteps(int16_t numberOfSteps)
 class Runner
 {
     public:
-        static const int delta = 5; // value to increment/decrement speed
+        static const int delta = 5; // value to increment/decrement pwm
         
         static void runAutomatic();
         static void runManual();
@@ -67,8 +69,7 @@ class Runner
             Beginning,
             Delay,
             Exposure,
-            Move,
-            Correction
+            Move
         };
         
         static void finalize();
@@ -112,17 +113,17 @@ struct MenuItemsDef
         {"Exposure",     ""}};
 };
 
-class SpeedValidator
+class PWMValidator
 {
     public:
-        static int validate(int speed)
+        static int validate(int pwm)
         {
-            if (speed > MAX_PWM)
-                speed = MAX_PWM;
-            else if (speed < MIN_PWM)
-                speed = MIN_PWM;
+            if (pwm > MAX_PWM)
+                pwm = MAX_PWM;
+            else if (pwm < MIN_PWM)
+                pwm = MIN_PWM;
 
-            return speed;
+            return pwm;
         }
 };
 
@@ -133,8 +134,8 @@ int lastHighSteps = 0;
 class Settings
 {
     public:
-        static const float lowNonstopFrequency = 0.5;
-        static const float highNonstopFrequency = 3.0;
+        static constexpr float lowNonstopFrequency = 0.5;
+        static constexpr float highNonstopFrequency = 3.0;
         
         static int16_t getSteps()
         {
@@ -184,12 +185,12 @@ class Settings
             eeprom_update_byte(&accelerationOffset, value);
         }
 
-        static int16_t getDelay()
+        static uint16_t getDelay()
         {
             return validateDelay(eeprom_read_word(&delayOffset));
         }
 
-        static int16_t validateDelay(int16_t value)
+        static uint16_t validateDelay(int16_t value)
         {
             return 0 <= value && value <= 5000 && value % 100 == 0
                 ? value
@@ -201,12 +202,12 @@ class Settings
             eeprom_update_word(&delayOffset, value);
         }
 
-        static int16_t getExposure()
+        static uint16_t getExposure()
         {
             return validateExposure(eeprom_read_word(&exposureOffset));
         }
 
-        static int16_t validateExposure(int16_t value)
+        static uint16_t validateExposure(int16_t value)
         {
             return 100 <= value && value <= 500 && value % 100 == 0
                 ? value
@@ -218,12 +219,12 @@ class Settings
             eeprom_update_word(&exposureOffset, value);
         }
 
-        static int16_t getVideoSpeed()
+        static int16_t getVideoPWM()
         {
-            return validateVideoSpeed(eeprom_read_word(&videoSpeedOffset));
+            return validateVideoPWM(eeprom_read_word(&videoPWMOffset));
         }
 
-        static int16_t validateVideoSpeed(int16_t value)
+        static int16_t validateVideoPWM(int16_t value)
         {
             return 
                 (-MAX_PWM <= value && value <= -MIN_PWM) ||
@@ -232,9 +233,9 @@ class Settings
                     : 100; // use default
         }
 
-        static void setVideoSpeed(int16_t value)
+        static void setVideoPWM(int16_t value)
         {
-            eeprom_update_word(&videoSpeedOffset, value);
+            eeprom_update_word(&videoPWMOffset, value);
         }
 
         static float getNonstopFrequency()
@@ -249,38 +250,38 @@ class Settings
                 : lowNonstopFrequency; // use default
         }
         
-        static int16_t getRealNonstopSpeed()
+        static int16_t getRealNonstopPWM()
         {
             float frequency = getNonstopFrequency();
-            int16_t result = frequencyToSpeed(frequency);
+            int16_t result = frequencyToPWM(frequency);
 #ifdef DEBUG_MODE
-            Serial.println("frequency from EEPROM = " + String(frequency) + "\tspeed = " + String(result));
+            Serial.println("frequency from EEPROM = " + String(frequency) + "\tpwm = " + String(result));
 #endif
-            return SpeedValidator::validate(result);
+            return PWMValidator::validate(result);
         }
 
-        static int16_t getLowRealNonstopSpeed()
+        static int16_t getLowRealNonstopPWM()
         {
             float frequency = lowNonstopFrequency;
-            int16_t result = SpeedValidator::validate(frequencyToSpeed(frequency));
+            int16_t result = PWMValidator::validate(frequencyToPWM(frequency));
 #ifdef DEBUG_MODE
             if (lastLowSteps != getSteps())
             {
-                Serial.println("low speed = " + String(result));
+                Serial.println("low pwm = " + String(result));
                 lastLowSteps = getSteps();
             }
 #endif
             return result;
         }
 
-        static int16_t getHighRealNonstopSpeed()
+        static int16_t getHighRealNonstopPWM()
         {
             float frequency = highNonstopFrequency;
-            int16_t result = SpeedValidator::validate(frequencyToSpeed(frequency));
+            int16_t result = PWMValidator::validate(frequencyToPWM(frequency));
 #ifdef DEBUG_MODE
             if (lastHighSteps != getSteps())
             {
-                Serial.println("high speed = " + String(result));
+                Serial.println("high pwm = " + String(result));
                 lastHighSteps = getSteps();
             }
 #endif
@@ -295,9 +296,9 @@ class Settings
             eeprom_update_float(&nonstopFrequencyOffset, value);
         }
         
-        static void setNonstopSpeed(int16_t value)
+        static void setNonstopPWM(int16_t value)
         {
-            float frequency = speedToFrequency(value);
+            float frequency = pwmToFrequency(value);
 #ifdef DEBUG_MODE
             Serial.println("Store frequency = " + String(frequency));
 #endif
@@ -322,10 +323,10 @@ class Settings
         }
 
     private:
-        static float getTimeOfTurn(int16_t speed)
+        static float getTimeOfTurn(int16_t pwm)
         {
             static const char buff[] = { 97, 89, 81, 75, 69, 64, 59, 56, 52, 49, 47, 44, 42, 40, 38, 36, 35, 34, 32, 31, 30, 29, 28, 27, 26, 26, 25, 24, 24, 23, 22, 23, 23, 22, 22 };
-            int index = speed - MIN_PWM;
+            int index = pwm - MIN_PWM;
             if (index < 35)
                 return buff[index];
             else if (index < 38)
@@ -362,28 +363,28 @@ class Settings
                 return 6;
         }
 
-        static float getSpeedOfTurn(float time)
+        static float getPWMOfTurn(float time)
         {
-            int speed = MAX_PWM;
-            while (getTimeOfTurn(speed) < time && speed > MIN_PWM)
+            int pwm = MAX_PWM;
+            while (getTimeOfTurn(pwm) < time && pwm > MIN_PWM)
             {
-                speed--;
+                pwm--;
             }
 
-            return speed;
+            return pwm;
         }
 
-        static float speedToFrequency(int16_t speed)
+        static float pwmToFrequency(int16_t pwm)
         {
             float steps = getSteps();
-            return steps / getTimeOfTurn(speed);
+            return steps / getTimeOfTurn(pwm);
         }
 
-        static int16_t frequencyToSpeed(float frequency)
+        static int16_t frequencyToPWM(float frequency)
         {
             float steps = getSteps();
             float time = steps / frequency;
-            float result = getSpeedOfTurn(time);
+            float result = getPWMOfTurn(time);
             return result + 0.5; // rounded
         }
 };
@@ -421,18 +422,19 @@ class Menu
         void display()
         {
             String top;
+            unsigned char index = (unsigned char) current;
             switch (_mode)
             {
                 case MenuItems:
-                    top = _items[current].top;
+                    top = _items[index].top;
                     if (top.startsWith("%"))
                         top = formatSteps(top);
                     printTop(top);
-                    printBottom(_items[current].bottom);
+                    printBottom(_items[index].bottom);
                     break;
 
                 case Array:
-                    printTop(String(_array[current], DEC));
+                    printTop(String(_array[index], DEC));
                     printBottom("");
                     break;
                 
@@ -480,8 +482,8 @@ class Menu
         };
 
         Mode _mode;
-        MenuItem* _items;
-        int16_t* _array;
+        const MenuItem* _items;
+        const int16_t* _array;
         char _length;
         char _offset;
         char _multiplier;
@@ -551,19 +553,20 @@ class SettingEditor
 
         void update()
         {
+            unsigned char index = (unsigned char) _menu->current;
             switch (settingNum)
             {
                 case 0: // Steps
-                    Settings::setSteps(steps[_menu->current]);
+                    Settings::setSteps(steps[index]);
                     break;
                 case 1: // Acceleration
-                    Settings::setAcceleration(_menu->current + 1);
+                    Settings::setAcceleration(index + 1);
                     break;
                 case 2: // Delay
-                    Settings::setDelay(_menu->current * 100);
+                    Settings::setDelay(index * 100);
                     break;
                 case 3: // Exposure
-                    Settings::setExposure((_menu->current + 1) * 100);
+                    Settings::setExposure((index + 1) * 100);
                     break;
             }
         }
@@ -602,6 +605,8 @@ class Mover
         {
             Stop,
             Move,
+            Stopping,
+            Correction,
             RunAcc,
             Run,
             RunDec
@@ -612,6 +617,8 @@ class Mover
             switch (_state)
             {
                 case Move:
+                case Stopping:
+                case Correction:
                     tickMove();
                     break;
                     
@@ -619,6 +626,9 @@ class Mover
                 case RunAcc:
                 case RunDec:
                     tickRun();
+                    break;
+
+                default:
                     break;
             }
         }
@@ -628,28 +638,28 @@ class Mover
             return _state;
         }
 
-        void move(int graduations, int maxSpeed = MAX_PWM)
+        void move(int graduations, int maxPWM = MAX_PWM)
         {
             if (!isStopped())
                 return;
 
             _graduations = abs(graduations);
             _forward = graduations > 0;
-            _currentSpeed = MIN_PWM;
-            _maxSpeed = maxSpeed;
-            encoder.readAndReset();
+            _currentPWM = MIN_PWM;
+            _maxPWM = maxPWM;
+            _accumAbsolutePos += encoder.readAndReset();
             _state = Move;
         }
 
-        void run(int speed)
+        void run(int pwm)
         {
             if (!isStopped())
                 return;
 
-            _maxSpeed = abs(speed);
-            _forward = speed > 0;
-            _currentSpeed = MIN_PWM;
-            encoder.readAndReset();
+            _maxPWM = abs(pwm);
+            _forward = pwm > 0;
+            _currentPWM = MIN_PWM;
+            _accumAbsolutePos += encoder.readAndReset();
             _state = RunAcc;
         }
 
@@ -662,11 +672,11 @@ class Mover
 
         void softStop()
         {
-            if( _state == Run || _state == RunAcc || _state == RunDec)
+            if (_state == Run)
             {
                 // Calculate stop point
                 float decelerationLength = Settings::getRealAcceleration();
-                float graduationsToStop = (_currentSpeed - MIN_PWM) * decelerationLength /
+                float graduationsToStop = (_currentPWM - MIN_PWM) * decelerationLength /
                     (MAX_PWM - MIN_PWM);
                 _graduations = getCurrentPos() + graduationsToStop;
                 _state = RunDec; // deceleration state
@@ -687,70 +697,133 @@ class Mover
         }
 
         // Returns current PWM
-        inline int getCurrentSpeed()
+        inline int getCurrentPWM()
         {
-            return _currentSpeed;
+            return _currentPWM;
         }
 
         // Returns maximum PWM
-        inline int getMaxSpeed()
+        inline int getMaxPWM()
         {
-            return _maxSpeed;
+            return _maxPWM;
         }
 
-        void changeSpeed(int delta)
+        void changePWM(int delta)
         {
             switch (_state)
             {
                 case Move:
-                    if (_currentSpeed == _maxSpeed)
+                    if (_currentPWM == _maxPWM)
                     {
-                        _maxSpeed += delta;
-                        _maxSpeed = SpeedValidator::validate(_maxSpeed);
-                        _currentSpeed = _maxSpeed;
-                        analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
+                        _maxPWM += delta;
+                        _maxPWM = PWMValidator::validate(_maxPWM);
+                        _currentPWM = _maxPWM;
+                        analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
                     }
                     break;
                     
                 case Run:
-                    _maxSpeed += delta;
-                    _maxSpeed = SpeedValidator::validate(_maxSpeed);
-                    _currentSpeed = _maxSpeed;
-                    analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
+                    _maxPWM += delta;
+                    _maxPWM = PWMValidator::validate(_maxPWM);
+                    _currentPWM = _maxPWM;
+                    analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
+                    break;
+
+                default:
                     break;
             }
         }
 
-        // Returns graduation count passed from starting point
         int getCurrentPos()
         {
-            int32_t pos = abs(encoder.read());
-            return pos;
+            int32_t pos = encoder.read();
+            return abs(pos);
+        }
+
+        // Returns graduation count passed from starting point. Can be negative
+        int32_t getAbsolutePos()
+        {
+            return _accumAbsolutePos + encoder.read();
+        }
+
+        void resetAbsolutePos()
+        {
+            encoder.readAndReset();
+            _accumAbsolutePos = 0;
         }
 
     private:
         State _state = Stop;
         int _graduations;
         bool _forward;
-        int _maxSpeed = MAX_PWM;
+        int _maxPWM = MAX_PWM;
         int _currentPos;
-        int _currentSpeed;
-
+        int _lastPos;
+        int32_t _accumAbsolutePos;
+        int _currentPWM;
+        unsigned long _timer;
+        unsigned char _timePartCount;
+        
         void tickMove()
         {
             _currentPos = getCurrentPos();
             if (_currentPos >= _graduations)
             {
-                stop();
+                switch (_state)
+                {
+                    case Move:
+                        stop();
+                        _state = Stopping;
+                        _timePartCount = 0;
+                        _lastPos = _currentPos;
+                        _timer = millis();
+                        return;
+
+                    case Correction:
+                        // finish
+                        stop();
+                        return;
+
+                    default:
+                        // continue
+                        break;
+                }
+            }
+            else if (_state == Move || _state == Correction)
+            {
+                if (_currentPos < _graduations / 2)
+                    accelerate();
+                else
+                    decelerate();
+    
+                analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
                 return;
             }
 
-            if (_currentPos < _graduations / 2)
-                accelerate();
-            else
-                decelerate();
+            // Wait until table die
+            if (_state == Stopping && millis() - _timer >= 10)
+            {
+                if (_currentPos == _lastPos)
+                {
+                    _timePartCount++;
+                }
+                else
+                {
+                    _timePartCount = 0;
+                    _lastPos = _currentPos;
+                }
 
-            analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
+                if (_timePartCount >= 10)
+                {
+                    // Table has been at rest for the last 10 times
+                    makeCorrection();
+                }
+                else
+                {
+                    // continue
+                    _timer = millis();
+                }
+            }
         }
 
         void accelerate()
@@ -758,8 +831,8 @@ class Mover
             // Use linear function to accelerate
             float x = _currentPos;
             float accelerationLength = Settings::getRealAcceleration();
-            float currentSpeed = MIN_PWM + x * (MAX_PWM - MIN_PWM) / accelerationLength;
-            _currentSpeed = validateSpeed(currentSpeed);
+            float currentPWM = MIN_PWM + x * (MAX_PWM - MIN_PWM) / accelerationLength;
+            _currentPWM = validatePWM(currentPWM);
         }
 
         void decelerate()
@@ -767,8 +840,31 @@ class Mover
             // Use linear function to decelerate
             float x = _graduations - _currentPos - getFinalDistance();
             float decelerationLength = Settings::getRealAcceleration();
-            float currentSpeed = MIN_PWM + x * (MAX_PWM - MIN_PWM) / decelerationLength;
-            _currentSpeed = validateSpeed(currentSpeed);
+            float currentPWM = MIN_PWM + x * (MAX_PWM - MIN_PWM) / decelerationLength;
+            _currentPWM = validatePWM(currentPWM);
+        }
+
+        void makeCorrection()
+        {
+            int error = _graduations - _currentPos;
+            if (error == 0)
+            {
+                // No correction needed, finish
+                stop();
+                return;
+            }
+            else
+            {
+                // Make correction
+                if (!isForward())
+                    error = -error;
+#ifdef DEBUG_MODE
+                Serial.println("Error = " + String(error) + ", correction...");
+#endif
+                stop();
+                move(error, MIN_PWM);
+                _state = Correction;
+            }
         }
 
         // End of the step we should go with MIN_PWM
@@ -795,30 +891,35 @@ class Mover
             switch (_state)
             {
                 case RunAcc:
+                    _currentPos = getCurrentPos();
                     accelerate();
-                    analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
-                    if (_currentSpeed == _maxSpeed)
+                    analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
+                    if (_currentPWM >= _maxPWM)
                         _state = Run;
                     break;
                     
                 case RunDec:
+                    _currentPos = getCurrentPos();
                     decelerate();
-                    if (_currentSpeed <= MIN_PWM)
+                    if (_currentPWM <= MIN_PWM)
                         stop();
                     else
-                        analogWrite(_forward? MOTOR1 : MOTOR2, _currentSpeed);
+                        analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
+                    break;
+
+                default:
                     break;
             }
         }
 
-        int validateSpeed(int speed)
+        int validatePWM(int pwm)
         {
-            if (speed > _maxSpeed)
-                speed = _maxSpeed;
-            else if (speed < MIN_PWM)
-                speed = MIN_PWM;
+            if (pwm > _maxPWM)
+                pwm = _maxPWM;
+            else if (pwm < MIN_PWM)
+                pwm = MIN_PWM;
 
-            return speed;
+            return pwm;
         }
 };
 Mover mover;
@@ -839,7 +940,8 @@ class Selector
         {
             if (hold)
             {
-                _menuDef.handlers[menu.current]();
+                unsigned char index = (unsigned char) menu.current;
+                _menuDef.handlers[index]();
                 return;
             }
             
@@ -904,16 +1006,18 @@ class Selector
 };
 Selector selector;
 
-const int completeStopDelay = 50; // 50 ms to complete stop
 int16_t stepNumber = 0;
 unsigned long timer = 0;
 bool isRunning = false;
-bool needToCheckError = true;
 void Runner::runAutomatic()
 {
     const String mode = "Auto...";
     const String stepName = "photo";
     static State currentState;
+    static int16_t lastGraduations;
+#ifdef DEBUG_MODE
+    static int total = 0;
+#endif
     
     if (enc.press())
     {
@@ -932,8 +1036,12 @@ void Runner::runAutomatic()
         stepNumber = 0;
         digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
         isRunning = true;
+        lastGraduations = 0;
         timer = millis();
         currentState = Beginning;
+#ifdef DEBUG_MODE
+        total = 0;
+#endif
         return;
     }
 
@@ -951,48 +1059,39 @@ void Runner::runAutomatic()
     {
         digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
         currentState = Move;
-        needToCheckError = true;
-        mover.move(stepGraduations);
+        int lastError = 0;
+        if (lastGraduations > 0)
+        {
+            int32_t absolutePos = mover.getAbsolutePos();
+            lastError = lastGraduations - abs(absolutePos);
+#ifdef DEBUG_MODE
+            total += absolutePos;
+            Serial.println("stepGraduations = " + String(stepGraduations) + "  absolutePos = " +
+                String(absolutePos) + "  lastError = " + String(lastError));
+#endif
+        }
+        mover.resetAbsolutePos();
+        lastGraduations = stepGraduations + lastError;
+        mover.move(lastGraduations);
         return;
     }
     
     if (currentState == Move)
     {
-        if (needToCheckError)
-        {
-            timer = millis();
-            currentState = Correction;
-            return;
-        }
-
         if (stepNumber < stepCount)
         {
-            timer = millis(); // set timer
+            timer = millis();
             currentState = Delay;
         }
         else
         {
+#ifdef DEBUG_MODE
+            int32_t absolutePos = mover.getAbsolutePos();
+            total += absolutePos;
+            Serial.println("Total = " + String(total));
+#endif
             finalize();
         }
-        return;
-    }
-
-    if (currentState == Correction && millis() - timer >= completeStopDelay)
-    {
-        int16_t error = stepGraduations - mover.getCurrentPos();
-        timer = millis();
-        if (error == 0)
-            timer -= completeStopDelay;
-        else
-        {
-#ifdef DEBUG_MODE
-            Serial.println(mover.getCurrentPos());
-            Serial.println("Error = " + String(error));
-#endif
-            mover.move(error, MIN_PWM);
-        }
-        currentState = Move;
-        needToCheckError = false;
         return;
     }
 
@@ -1011,6 +1110,10 @@ void Runner::runManual()
     const String mode = "Manual...";
     const String stepName = "step";
     static State currentState;
+    static int16_t lastGraduations;
+#ifdef DEBUG_MODE
+    static int total = 0;
+#endif
     
     if (enc.press())
     {
@@ -1027,8 +1130,12 @@ void Runner::runManual()
         display(mode, stepName);
         digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
         isRunning = true;
+        lastGraduations = 0;
         timer = millis();
         currentState = Exposure;
+#ifdef DEBUG_MODE
+        total = 0;
+#endif
         return;
     }
 
@@ -1051,20 +1158,25 @@ void Runner::runManual()
     {
         timer = millis();
         currentState = Move;
-        needToCheckError = true;
-        mover.move(stepGraduations);
+        int lastError = 0;
+        if (lastGraduations > 0)
+        {
+            int32_t absolutePos = mover.getAbsolutePos();
+            lastError = lastGraduations - abs(absolutePos);
+#ifdef DEBUG_MODE
+            total += absolutePos;
+            Serial.println("stepGraduations = " + String(stepGraduations) + "  absolutePos = " +
+                String(absolutePos) + "  lastError = " + String(lastError));
+#endif
+        }
+        mover.resetAbsolutePos();
+        lastGraduations = stepGraduations + lastError;
+        mover.move(lastGraduations);
         return;
     }
 
     if (currentState == Move && mover.isStopped())
     {
-        if (needToCheckError)
-        {
-            timer = millis();
-            currentState = Correction;
-            return;
-        }
-
         if (stepNumber < stepCount)
         {
             currentState = Waiting;
@@ -1073,24 +1185,13 @@ void Runner::runManual()
         }
         else
         {
+#ifdef DEBUG_MODE
+            int32_t absolutePos = mover.getAbsolutePos();
+            total += absolutePos;
+            Serial.println("Total = " + String(total));
+#endif
             finalize();
         }
-    }
-
-    if (currentState == Correction && millis() - timer >= completeStopDelay)
-    {
-        int16_t error = stepGraduations - mover.getCurrentPos();
-        if (error != 0)
-        {
-#ifdef DEBUG_MODE
-            Serial.println(mover.getCurrentPos());
-            Serial.println("Error = " + String(error));
-#endif
-            mover.move(error, MIN_PWM);
-        }
-        currentState = Move;
-        needToCheckError = false;
-        return;
     }
 }
 
@@ -1100,37 +1201,40 @@ void Runner::runNonstop()
     const String stepName = "photo";
     static State currentState;
     static int nextSnapshotPos;
-    static bool needToStoreNewSpeed;
- 
+    static bool needToStoreNewPWM;
+#ifdef DEBUG_MODE
+    static int total = 0;
+#endif
+
     if (enc.press())
     {
         finalize();
         return;
     }
-    else if (enc.turn() && currentState != Correction)
+    else if (enc.turn() && !mover.isStopped())
     {
         if (enc.left())
         {
-            if (mover.getCurrentSpeed() > Settings::getLowRealNonstopSpeed())
+            if (mover.getCurrentPWM() > Settings::getLowRealNonstopPWM())
             {
                 int d = delta;
-                if (mover.getCurrentSpeed() - d < Settings::getLowRealNonstopSpeed())
-                    d = mover.getCurrentSpeed() - Settings::getLowRealNonstopSpeed();
+                if (mover.getCurrentPWM() - d < Settings::getLowRealNonstopPWM())
+                    d = mover.getCurrentPWM() - Settings::getLowRealNonstopPWM();
 
-                mover.changeSpeed(-d);
-                needToStoreNewSpeed = true;
+                mover.changePWM(-d);
+                needToStoreNewPWM = true;
             }
         }
         else if (enc.right())
         {
-            if (mover.getCurrentSpeed() < Settings::getHighRealNonstopSpeed())
+            if (mover.getCurrentPWM() < Settings::getHighRealNonstopPWM())
             {
                 int d = delta;
-                if (mover.getCurrentSpeed() + d > Settings::getHighRealNonstopSpeed())
-                    d = Settings::getHighRealNonstopSpeed() - mover.getCurrentSpeed();
+                if (mover.getCurrentPWM() + d > Settings::getHighRealNonstopPWM())
+                    d = Settings::getHighRealNonstopPWM() - mover.getCurrentPWM();
 
-                mover.changeSpeed(d);
-                needToStoreNewSpeed = true;
+                mover.changePWM(d);
+                needToStoreNewPWM = true;
             }
         }
     }
@@ -1143,9 +1247,13 @@ void Runner::runNonstop()
         stepNumber = 0;
         digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
         isRunning = true;
-        needToStoreNewSpeed = false;
+        needToStoreNewPWM = false;
         timer = millis();
         currentState = Beginning;
+#ifdef DEBUG_MODE
+        total = 0;
+        mover.resetAbsolutePos();
+#endif
         return;
     }
 
@@ -1157,8 +1265,7 @@ void Runner::runNonstop()
         nextSnapshotPos = stepGraduations;
         timer = millis();
         currentState = Exposure;
-        needToCheckError = true;
-        mover.move(GRADUATIONS, Settings::getRealNonstopSpeed());
+        mover.move(GRADUATIONS, Settings::getRealNonstopPWM());
         return;
     }
 
@@ -1186,42 +1293,22 @@ void Runner::runNonstop()
         }
     }
 
-    if (isRunning && currentState != Beginning && currentState != Correction && mover.isStopped())
+    if (isRunning && currentState != Beginning && mover.isStopped())
     {
-        if (needToStoreNewSpeed)
+        if (needToStoreNewPWM)
         {
 #ifdef DEBUG_MODE
-            Serial.println("Store new speed = " + String(mover.getMaxSpeed()));
+            Serial.println("Store new pwm = " + String(mover.getMaxPWM()));
 #endif
-            Settings::setNonstopSpeed(mover.getMaxSpeed());
-            needToStoreNewSpeed = false;
+            Settings::setNonstopPWM(mover.getMaxPWM());
+            needToStoreNewPWM = false;
         }
 
-        if (needToCheckError)
-        {
-            timer = millis();
-            currentState = Correction;
-            return;
-        }
-        
-        finalize();
-    }
-
-    if (currentState == Correction && millis() - timer >= completeStopDelay)
-    {
-        int16_t error = GRADUATIONS - mover.getCurrentPos();
-        if (error != 0)
-        {
 #ifdef DEBUG_MODE
-            Serial.println(mover.getCurrentPos());
-            Serial.println("Error = " + String(error));
+        int32_t absolutePos = mover.getAbsolutePos();
+        total += absolutePos;
+        Serial.println("Total = " + String(total));
 #endif
-            mover.move(error, MIN_PWM);
-            currentState = Waiting;
-            needToCheckError = false;
-            return;
-        }
-
         finalize();
     }
 }
@@ -1231,29 +1318,28 @@ void Runner::runVideo()
     if (!isRunning)
     {
         selector.menu.display("Video...", "");
-        mover.run(Settings::getVideoSpeed());
+        mover.run(Settings::getVideoPWM());
         isRunning = true;
+        return;
     }
 
     if (mover.isStopped())
     {
-        isRunning = false;
-        selector.hold = false;
+        finalize();
         return;
     }
     
     char direction = mover.isForward() ? 1 : -1;
     if (enc.press())
     {
-        switch (mover.getState())
+        if (mover.getState() == mover.State::Run)
         {
-            case mover.State::RunDec:
-                return; // tried to stop already
-
-            case mover.State::Run:
-                Settings::setVideoSpeed(mover.getMaxSpeed() * direction);
-            default:
-                mover.softStop();
+            Settings::setVideoPWM(mover.getMaxPWM() * direction);
+            mover.softStop();
+        }
+        else
+        {
+            mover.stop();
         }
     }
     else if (enc.turn() && mover.getState() == mover.State::Run)
@@ -1261,7 +1347,7 @@ void Runner::runVideo()
         char direction = mover.isForward() ? 1 : -1;
         if (enc.left())
         {
-            if (direction > 0 && mover.getCurrentSpeed() <= MIN_PWM)
+            if (direction > 0 && mover.getCurrentPWM() <= MIN_PWM)
             {
                 // Change direction
                 mover.stop();
@@ -1269,11 +1355,11 @@ void Runner::runVideo()
                 return;
             }
 
-            mover.changeSpeed(-delta * direction);
+            mover.changePWM(-delta * direction);
         }
         else if (enc.right())
         {
-            if (direction < 0 && mover.getCurrentSpeed() <= MIN_PWM)
+            if (direction < 0 && mover.getCurrentPWM() <= MIN_PWM)
             {
                 // Change direction
                 mover.stop();
@@ -1281,7 +1367,7 @@ void Runner::runVideo()
                 return;
             }
 
-            mover.changeSpeed(delta * direction);
+            mover.changePWM(delta * direction);
         }
     }
 }
@@ -1289,10 +1375,16 @@ void Runner::runVideo()
 void Runner::runRotate()
 {
     static State currentState;
+#ifdef DEBUG_MODE
+    static int total = 0;
+#endif
 
     if (!isRunning)
     {
         selector.menu.display("Rotation...", "<-  ->");
+#ifdef DEBUG_MODE
+        total = 0;
+#endif
         isRunning = true;
     }
     
@@ -1310,46 +1402,30 @@ void Runner::runRotate()
 
     if (enc.left())
     {
+#ifdef DEBUG_MODE
+        total = 0;
+#endif
         currentState = Move;
-        needToCheckError = true;
         mover.move(-GRADUATIONS / 4);
     }
     else if (enc.right())
     {
+#ifdef DEBUG_MODE
+        total = 0;
+#endif
         currentState = Move;
-        needToCheckError = true;
         mover.move(GRADUATIONS / 4);
     }
 
     if (currentState == Move && mover.isStopped())
     {
-        if (needToCheckError)
-        {
-            timer = millis();
-            currentState = Correction;
-            return;
-        }
-
-        currentState = Waiting;
-    }
-    
-    if (currentState == Correction && millis() - timer >= completeStopDelay)
-    {
-        int16_t error = GRADUATIONS / 4 - mover.getCurrentPos();
-        if (!mover.isForward())
-            error = -error;
-            
-        if (error != 0)
-        {
 #ifdef DEBUG_MODE
-            Serial.println(mover.getCurrentPos());
-            Serial.println("Error = " + String(error));
+        int32_t absolutePos = mover.getAbsolutePos();
+        mover.resetAbsolutePos();
+        total += absolutePos;
+        Serial.println("Total = " + String(total));
 #endif
-            mover.move(error, MIN_PWM);
-        }
-        currentState = Move;
-        needToCheckError = false;
-        return;
+        currentState = Waiting;
     }
 }
 
@@ -1358,7 +1434,6 @@ void Runner::finalize()
     isRunning = false;
     mover.stop();
     stepNumber = 0;
-    needToCheckError = true;
     digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
     digitalWrite(CAMERA, CAMERA_LOW); // release camera
     selector.hold = false; // release selector
