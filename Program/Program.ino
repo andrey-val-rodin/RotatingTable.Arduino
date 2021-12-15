@@ -1375,17 +1375,14 @@ void Runner::runVideo()
 void Runner::runRotate()
 {
     static State currentState;
-#ifdef DEBUG_MODE
-    static int total = 0;
-#endif
 
     if (!isRunning)
     {
         selector.menu.display("Rotation...", "<-  ->");
 #ifdef DEBUG_MODE
         mover.resetAbsolutePos();
-        total = 0;
 #endif
+        currentState = Waiting;
         isRunning = true;
     }
     
@@ -1397,34 +1394,30 @@ void Runner::runRotate()
 
     if (!mover.isStopped())
     {
-        enc.resetState();
         return;
     }
-
-    if (enc.left())
+    
+    if (enc.turn() && currentState == Waiting)
     {
-#ifdef DEBUG_MODE
-        total = 0;
-#endif
-        currentState = Move;
-        mover.move(-GRADUATIONS / 4);
-    }
-    else if (enc.right())
-    {
-#ifdef DEBUG_MODE
-        total = 0;
-#endif
-        currentState = Move;
-        mover.move(GRADUATIONS / 4);
-    }
+        if (enc.left())
+        {
+            currentState = Move;
+            mover.move(-GRADUATIONS / 4);
+        }
+        else if (enc.right())
+        {
+            currentState = Move;
+            mover.move(GRADUATIONS / 4);
+        }
 
-    if (currentState == Move && mover.isStopped())
+        return;
+    }
+    
+    if (currentState == Move)
     {
 #ifdef DEBUG_MODE
         int32_t absolutePos = mover.getAbsolutePos();
-        mover.resetAbsolutePos();
-        total += absolutePos;
-        Serial.println("Total = " + String(total));
+        Serial.println("absolutePos = " + String(absolutePos));
 #endif
         currentState = Waiting;
     }
