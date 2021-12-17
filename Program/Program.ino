@@ -875,13 +875,13 @@ class Mover
             switch (Settings::getAcceleration())
             {
                 case 10:
-                    return 16;
-                case 9:
                     return 12;
+                case 9:
+                    return 8;
                 case 8:
-                    return 6;
+                    return 4;
                 case 7:
-                    return 3;
+                    return 2;
                 default:
                     return 0;
             }
