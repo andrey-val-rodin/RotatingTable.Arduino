@@ -98,7 +98,7 @@ struct MenuItemsDef
         {"Rotate 90",   ""},
         {"Settings",    ""}};
 
-    callback_t handlers[topItemsLength - 1] = {
+    const callback_t handlers[topItemsLength - 1] = {
         Runner::runAutomatic,
         Runner::runManual,
         Runner::runNonstop,
