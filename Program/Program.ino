@@ -103,12 +103,14 @@ MenuItem MenuItemsDef::topItems[topItemsLength] = {
     {"%Nonstop",    ""},
     {"Video",       ""},
     {"Rotate 90",   ""},
-    {"Settings",    ""}};
+    {"Settings",    ""}
+};
 MenuItem MenuItemsDef::settingsItems[settingsItemsLength] = {
     {"Steps",        ""},
     {"Acceleration", ""},
     {"Delay",        ""},
-    {"Exposure",     ""}};
+    {"Exposure",     ""}
+};
 const callback_t MenuItemsDef::handlers[topItemsLength - 1] = {
     Runner::runAutomatic,
     Runner::runManual,
@@ -530,7 +532,9 @@ class Menu
 
         String fillWithSpaces(String text)
         {
-            String result = text;
+            String result;
+            result.reserve(16);
+            result = text;
             while (result.length() < 16)
                 result += " ";
 
