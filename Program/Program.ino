@@ -89,29 +89,32 @@ typedef void (*callback_t)();
 struct MenuItemsDef
 {
     static const char topItemsLength = 6;
-
-    MenuItem topItems[topItemsLength] = {
-        {"%Auto",       ""},
-        {"%Manual",     ""},
-        {"%Nonstop",    ""},
-        {"Video",       ""},
-        {"Rotate 90",   ""},
-        {"Settings",    ""}};
-
-    const callback_t handlers[topItemsLength - 1] = {
-        Runner::runAutomatic,
-        Runner::runManual,
-        Runner::runNonstop,
-        Runner::runVideo,
-        Runner::runRotate
-    };
+    static MenuItem topItems[topItemsLength];
 
     static const char settingsItemsLength = 4;
-    MenuItem settingsItems[settingsItemsLength] = {
-        {"Steps",        ""},
-        {"Acceleration", ""},
-        {"Delay",        ""},
-        {"Exposure",     ""}};
+    static MenuItem settingsItems[settingsItemsLength];
+
+    static const callback_t handlers[topItemsLength - 1];
+};
+
+MenuItem MenuItemsDef::topItems[topItemsLength] = {
+    {"%Auto",       ""},
+    {"%Manual",     ""},
+    {"%Nonstop",    ""},
+    {"Video",       ""},
+    {"Rotate 90",   ""},
+    {"Settings",    ""}};
+MenuItem MenuItemsDef::settingsItems[settingsItemsLength] = {
+    {"Steps",        ""},
+    {"Acceleration", ""},
+    {"Delay",        ""},
+    {"Exposure",     ""}};
+const callback_t MenuItemsDef::handlers[topItemsLength - 1] = {
+    Runner::runAutomatic,
+    Runner::runManual,
+    Runner::runNonstop,
+    Runner::runVideo,
+    Runner::runRotate
 };
 
 class PWMValidator
@@ -933,7 +936,7 @@ class Selector
 
         Selector() : _editor(&menu)
         {
-            menu.setItems(_menuDef.topItems, _menuDef.topItemsLength);
+            menu.setItems(MenuItemsDef::topItems, MenuItemsDef::topItemsLength);
             menu.current = Settings::getMenuIndex();
         }
 
@@ -942,7 +945,7 @@ class Selector
             if (hold)
             {
                 unsigned char index = (unsigned char) menu.current;
-                _menuDef.handlers[index]();
+                MenuItemsDef::handlers[index]();
                 return;
             }
             
@@ -960,7 +963,6 @@ class Selector
         }
         
     private:
-        MenuItemsDef _menuDef;
         char _level = 0;
         SettingEditor _editor;
 
@@ -968,7 +970,7 @@ class Selector
         {
             if (_level == 0) // top menu
             {
-                if (menu.current < _menuDef.topItemsLength - 1)
+                if (menu.current < MenuItemsDef::topItemsLength - 1)
                 {
                     Settings::setMenuIndex(menu.current);
                     hold = true;
@@ -976,7 +978,7 @@ class Selector
                 else // settings
                 {
                     updateSettings();
-                    menu.setItems(_menuDef.settingsItems, _menuDef.settingsItemsLength);
+                    menu.setItems(MenuItemsDef::settingsItems, MenuItemsDef::settingsItemsLength);
                     menu.display();
                     _level = 1;
                 }
@@ -990,8 +992,8 @@ class Selector
             {
                 // Update setting
                 _editor.update();
-                menu.setItems(_menuDef.topItems, _menuDef.topItemsLength);
-                menu.current = _menuDef.topItemsLength - 1; // index of Settings
+                menu.setItems(MenuItemsDef::topItems, MenuItemsDef::topItemsLength);
+                menu.current = MenuItemsDef::topItemsLength - 1; // index of Settings
                 menu.display();
                 _level = 0;
             }
@@ -999,10 +1001,10 @@ class Selector
 
         void updateSettings()
         {
-            _menuDef.settingsItems[0].bottom = String(Settings::getSteps(), DEC);
-            _menuDef.settingsItems[1].bottom = String(Settings::getAcceleration(), DEC);
-            _menuDef.settingsItems[2].bottom = String(Settings::getDelay(), DEC);
-            _menuDef.settingsItems[3].bottom = String(Settings::getExposure(), DEC);
+            MenuItemsDef::settingsItems[0].bottom = String(Settings::getSteps(), DEC);
+            MenuItemsDef::settingsItems[1].bottom = String(Settings::getAcceleration(), DEC);
+            MenuItemsDef::settingsItems[2].bottom = String(Settings::getDelay(), DEC);
+            MenuItemsDef::settingsItems[3].bottom = String(Settings::getExposure(), DEC);
         }
 };
 Selector selector;
