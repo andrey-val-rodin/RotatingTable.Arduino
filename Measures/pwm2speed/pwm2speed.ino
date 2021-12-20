@@ -55,6 +55,11 @@ class Settings
             result /= 3;
             return result; // value in range from 80 to 440 when GRADUATIONS = 4320
         }
+
+        static int16_t getSteps()
+        {
+            return 2;
+        }
 };
 
 class Mover
@@ -333,13 +338,13 @@ class Mover
             switch (Settings::getAcceleration())
             {
                 case 10:
-                    return 16;
+                    return Settings::getSteps() <= 30 ? 16 : 12;
                 case 9:
-                    return 12;
+                    return Settings::getSteps() <= 30 ? 10 : 8;
                 case 8:
-                    return 6;
+                    return Settings::getSteps() <= 30 ? 6 : 4;
                 case 7:
-                    return 3;
+                    return 2;
                 default:
                     return 0;
             }
@@ -511,6 +516,9 @@ class Worker
         
         void tick()
         {
+            if (_stage == 0)
+                return;
+
             _measurer.tick();
             
             switch (_stage)
@@ -520,8 +528,8 @@ class Worker
                         setStage(2);
                     return;
 
-                case 2:
-                    _stage = 0;
+                default:
+                    return;
             }
         }
 
@@ -532,7 +540,7 @@ class Worker
 
         void cancel()
         {
-            _stage = 0;
+            setStage(0);
             _measurer.cancel();
         }
         
@@ -542,11 +550,11 @@ class Worker
 
         void setStage(int stage)
         {
-            switch (stage)
+            _stage = stage;
+            switch (_stage)
             {
                 case 1:
                     Serial.println("Стандартная частота");
-                    _stage = 1;
                     MIN_PWM = 10;
                     break;
 

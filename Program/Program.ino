@@ -200,7 +200,7 @@ class Settings
         {
             return 0 <= value && value <= 5000 && value % 100 == 0
                 ? value
-                : 100; // use default
+                : 0; // use default
         }
 
         static void setDelay(int16_t value)
@@ -882,11 +882,11 @@ class Mover
             switch (Settings::getAcceleration())
             {
                 case 10:
-                    return 12;
+                    return Settings::getSteps() <= 30 ? 16 : 12;
                 case 9:
-                    return 8;
+                    return Settings::getSteps() <= 30 ? 10 : 8;
                 case 8:
-                    return 4;
+                    return Settings::getSteps() <= 30 ? 6 : 4;
                 case 7:
                     return 2;
                 default:
