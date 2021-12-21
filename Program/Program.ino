@@ -686,6 +686,8 @@ class Mover
                 float decelerationLength = Settings::getRealAcceleration();
                 float graduationsToStop = (_currentPWM - MIN_PWM) * decelerationLength /
                     (MAX_PWM - MIN_PWM);
+                if (!_forward)
+                    graduationsToStop = -graduationsToStop;
                 _graduations = getCurrentPos() + graduationsToStop;
                 _state = RunDec; // deceleration state
             }
