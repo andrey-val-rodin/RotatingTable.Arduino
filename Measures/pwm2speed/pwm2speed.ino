@@ -102,16 +102,16 @@ class Mover
             return _state;
         }
 
-        void move(int graduations, int maxPWM = MAX_PWM)
+        void move(int32_t graduations, int maxPWM = MAX_PWM)
         {
             if (!isStopped())
                 return;
 
-            _graduations = abs(graduations);
+            _graduations = graduations;
             _forward = graduations > 0;
             _currentPWM = MIN_PWM;
             _maxPWM = maxPWM;
-            _accumAbsolutePos += encoder.readAndReset();
+            _accumAbsolutePos -= encoder.readAndReset();
             _state = Move;
         }
 
@@ -123,7 +123,7 @@ class Mover
             _maxPWM = abs(pwm);
             _forward = pwm > 0;
             _currentPWM = MIN_PWM;
-            _accumAbsolutePos += encoder.readAndReset();
+            _accumAbsolutePos -= encoder.readAndReset();
             _state = RunAcc;
         }
 
@@ -198,16 +198,19 @@ class Mover
             }
         }
 
-        int getCurrentPos()
+        int32_t getCurrentPos()
         {
             int32_t pos = encoder.read();
-            return abs(pos);
+            // Invert pos
+            // clockwise movement is positive, counterclockwise movement is negative
+            return -pos;
         }
 
         // Returns graduation count passed from starting point. Can be negative
         int32_t getAbsolutePos()
         {
-            return _accumAbsolutePos + encoder.read();
+            // Invert pos
+            return _accumAbsolutePos - encoder.read();
         }
 
         void resetAbsolutePos()
@@ -218,11 +221,11 @@ class Mover
 
     private:
         State _state = Stop;
-        int _graduations;
+        int32_t _graduations;
         bool _forward;
         int _maxPWM = MAX_PWM;
-        int _currentPos;
-        int _lastPos;
+        int32_t _currentPos;
+        int32_t _lastPos;
         int32_t _accumAbsolutePos;
         int _currentPWM;
         unsigned long _timer;
@@ -231,7 +234,10 @@ class Mover
         void tickMove()
         {
             _currentPos = getCurrentPos();
-            if (_currentPos >= _graduations)
+            bool reached = _forward
+                ? _currentPos >= _graduations
+                : _currentPos <= _graduations;
+            if (reached)
             {
                 switch (_state)
                 {
@@ -255,11 +261,14 @@ class Mover
             }
             else if (_state == Move || _state == Correction)
             {
-                if (_currentPos < _graduations / 2)
+                bool firstHalf = _forward
+                    ? _currentPos < _graduations / 2
+                    : _currentPos > _graduations / 2;
+                if (firstHalf)
                     accelerate();
                 else
                     decelerate();
-    
+
                 analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
                 return;
             }
@@ -294,6 +303,8 @@ class Mover
         {
             // Use linear function to accelerate
             float x = _currentPos;
+            if (!_forward)
+                x = -x;
             float accelerationLength = Settings::getRealAcceleration();
             float currentPWM = MIN_PWM + x * (MAX_PWM - MIN_PWM) / accelerationLength;
             _currentPWM = validatePWM(currentPWM);
@@ -302,7 +313,10 @@ class Mover
         void decelerate()
         {
             // Use linear function to decelerate
-            float x = _graduations - _currentPos - getFinalDistance();
+            float x = _graduations - _currentPos;
+            if (!_forward)
+                x = -x;
+            x -= getFinalDistance();
             float decelerationLength = Settings::getRealAcceleration();
             float currentPWM = MIN_PWM + x * (MAX_PWM - MIN_PWM) / decelerationLength;
             _currentPWM = validatePWM(currentPWM);
@@ -320,8 +334,6 @@ class Mover
             else
             {
                 // Make correction
-                if (!isForward())
-                    error = -error;
 #ifdef DEBUG_MODE
                 Serial.println("Error = " + String(error) + ", correction...");
 #endif
