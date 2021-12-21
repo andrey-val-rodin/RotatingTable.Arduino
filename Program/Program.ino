@@ -778,7 +778,10 @@ class Mover
         void tickMove()
         {
             _currentPos = getCurrentPos();
-            if (abs(_currentPos) >= abs(_graduations))
+            bool reached = _forward
+                ? _currentPos >= _graduations
+                : _currentPos <= _graduations;
+            if (reached)
             {
                 switch (_state)
                 {
@@ -802,11 +805,14 @@ class Mover
             }
             else if (_state == Move || _state == Correction)
             {
-                if (abs(_currentPos) < abs(_graduations / 2))
+                bool firstHalf = _forward
+                    ? _currentPos < _graduations / 2
+                    : _currentPos > _graduations / 2;
+                if (firstHalf)
                     accelerate();
                 else
                     decelerate();
-    
+
                 analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
                 return;
             }
