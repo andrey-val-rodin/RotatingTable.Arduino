@@ -646,16 +646,16 @@ class Mover
             return _state;
         }
 
-        void move(int graduations, int maxPWM = MAX_PWM)
+        void move(int32_t graduations, int maxPWM = MAX_PWM)
         {
             if (!isStopped())
                 return;
 
-            _graduations = abs(graduations);
+            _graduations = graduations;
             _forward = graduations > 0;
             _currentPWM = MIN_PWM;
             _maxPWM = maxPWM;
-            _accumAbsolutePos += encoder.readAndReset();
+            _accumAbsolutePos -= encoder.readAndReset();
             _state = Move;
         }
 
@@ -667,7 +667,7 @@ class Mover
             _maxPWM = abs(pwm);
             _forward = pwm > 0;
             _currentPWM = MIN_PWM;
-            _accumAbsolutePos += encoder.readAndReset();
+            _accumAbsolutePos -= encoder.readAndReset();
             _state = RunAcc;
         }
 
@@ -742,16 +742,19 @@ class Mover
             }
         }
 
-        int getCurrentPos()
+        int32_t getCurrentPos()
         {
             int32_t pos = encoder.read();
-            return abs(pos);
+            // Invert pos
+            // clockwise movement is positive, counterclockwise movement is negative
+            return -pos;
         }
 
         // Returns graduation count passed from starting point. Can be negative
         int32_t getAbsolutePos()
         {
-            return _accumAbsolutePos + encoder.read();
+            // Invert pos
+            return _accumAbsolutePos - encoder.read();
         }
 
         void resetAbsolutePos()
@@ -762,11 +765,11 @@ class Mover
 
     private:
         State _state = Stop;
-        int _graduations;
+        int32_t _graduations;
         bool _forward;
         int _maxPWM = MAX_PWM;
-        int _currentPos;
-        int _lastPos;
+        int32_t _currentPos;
+        int32_t _lastPos;
         int32_t _accumAbsolutePos;
         int _currentPWM;
         unsigned long _timer;
@@ -775,7 +778,7 @@ class Mover
         void tickMove()
         {
             _currentPos = getCurrentPos();
-            if (_currentPos >= _graduations)
+            if (abs(_currentPos) >= abs(_graduations))
             {
                 switch (_state)
                 {
@@ -799,7 +802,7 @@ class Mover
             }
             else if (_state == Move || _state == Correction)
             {
-                if (_currentPos < _graduations / 2)
+                if (abs(_currentPos) < abs(_graduations / 2))
                     accelerate();
                 else
                     decelerate();
@@ -838,6 +841,8 @@ class Mover
         {
             // Use linear function to accelerate
             float x = _currentPos;
+            if (!_forward)
+                x = -x;
             float accelerationLength = Settings::getRealAcceleration();
             float currentPWM = MIN_PWM + x * (MAX_PWM - MIN_PWM) / accelerationLength;
             _currentPWM = validatePWM(currentPWM);
@@ -846,7 +851,10 @@ class Mover
         void decelerate()
         {
             // Use linear function to decelerate
-            float x = _graduations - _currentPos - getFinalDistance();
+            float x = _graduations - _currentPos;
+            if (!_forward)
+                x = -x;
+            x -= getFinalDistance();
             float decelerationLength = Settings::getRealAcceleration();
             float currentPWM = MIN_PWM + x * (MAX_PWM - MIN_PWM) / decelerationLength;
             _currentPWM = validatePWM(currentPWM);
@@ -864,8 +872,6 @@ class Mover
             else
             {
                 // Make correction
-                if (!isForward())
-                    error = -error;
 #ifdef DEBUG_MODE
                 Serial.println("Error = " + String(error) + ", correction...");
 #endif
@@ -1021,7 +1027,7 @@ void Runner::runAutomatic()
     const String mode = "Auto...";
     const String stepName = "photo";
     static State currentState;
-    static int16_t lastGraduations;
+    static int32_t lastGraduations;
 #ifdef DEBUG_MODE
     static int total = 0;
 #endif
@@ -1067,10 +1073,10 @@ void Runner::runAutomatic()
         digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
         currentState = Move;
         int lastError = 0;
-        if (lastGraduations > 0)
+        if (lastGraduations != 0)
         {
             int32_t absolutePos = mover.getAbsolutePos();
-            lastError = lastGraduations - abs(absolutePos);
+            lastError = lastGraduations - absolutePos;
 #ifdef DEBUG_MODE
             total += absolutePos;
             Serial.println("stepGraduations = " + String(stepGraduations) + "  absolutePos = " +
@@ -1117,7 +1123,7 @@ void Runner::runManual()
     const String mode = "Manual...";
     const String stepName = "step";
     static State currentState;
-    static int16_t lastGraduations;
+    static int32_t lastGraduations;
 #ifdef DEBUG_MODE
     static int total = 0;
 #endif
@@ -1166,10 +1172,10 @@ void Runner::runManual()
         timer = millis();
         currentState = Move;
         int lastError = 0;
-        if (lastGraduations > 0)
+        if (lastGraduations != 0)
         {
             int32_t absolutePos = mover.getAbsolutePos();
-            lastError = lastGraduations - abs(absolutePos);
+            lastError = lastGraduations - absolutePos;
 #ifdef DEBUG_MODE
             total += absolutePos;
             Serial.println("stepGraduations = " + String(stepGraduations) + "  absolutePos = " +
