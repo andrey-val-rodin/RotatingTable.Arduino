@@ -111,7 +111,7 @@ class Mover
             _forward = graduations > 0;
             _currentPWM = MIN_PWM;
             _maxPWM = maxPWM;
-            _accumAbsolutePos -= encoder.readAndReset();
+            _cumulativePos -= encoder.readAndReset();
             _state = Move;
         }
 
@@ -123,7 +123,7 @@ class Mover
             _maxPWM = abs(pwm);
             _forward = pwm > 0;
             _currentPWM = MIN_PWM;
-            _accumAbsolutePos -= encoder.readAndReset();
+            _cumulativePos -= encoder.readAndReset();
             _state = RunAcc;
         }
 
@@ -142,6 +142,8 @@ class Mover
                 float decelerationLength = Settings::getRealAcceleration();
                 float graduationsToStop = (_currentPWM - MIN_PWM) * decelerationLength /
                     (MAX_PWM - MIN_PWM);
+                if (!_forward)
+                    graduationsToStop = -graduationsToStop;
                 _graduations = getCurrentPos() + graduationsToStop;
                 _state = RunDec; // deceleration state
             }
@@ -198,6 +200,7 @@ class Mover
             }
         }
 
+        // Returns current position in graduations. Can be negative
         int32_t getCurrentPos()
         {
             int32_t pos = encoder.read();
@@ -210,13 +213,13 @@ class Mover
         int32_t getAbsolutePos()
         {
             // Invert pos
-            return _accumAbsolutePos - encoder.read();
+            return _cumulativePos - encoder.read();
         }
 
         void resetAbsolutePos()
         {
             encoder.readAndReset();
-            _accumAbsolutePos = 0;
+            _cumulativePos = 0;
         }
 
     private:
@@ -226,7 +229,7 @@ class Mover
         int _maxPWM = MAX_PWM;
         int32_t _currentPos;
         int32_t _lastPos;
-        int32_t _accumAbsolutePos;
+        int32_t _cumulativePos;
         int _currentPWM;
         unsigned long _timer;
         unsigned char _timePartCount;
@@ -343,7 +346,7 @@ class Mover
             }
         }
 
-        // End of the step we should go with MIN_PWM
+        // We should pass end of step with MIN_PWM
         // This function returns length of this final distance
         int getFinalDistance()
         {

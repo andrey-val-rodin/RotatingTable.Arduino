@@ -655,7 +655,7 @@ class Mover
             _forward = graduations > 0;
             _currentPWM = MIN_PWM;
             _maxPWM = maxPWM;
-            _accumAbsolutePos -= encoder.readAndReset();
+            _cumulativePos -= encoder.readAndReset();
             _state = Move;
         }
 
@@ -667,7 +667,7 @@ class Mover
             _maxPWM = abs(pwm);
             _forward = pwm > 0;
             _currentPWM = MIN_PWM;
-            _accumAbsolutePos -= encoder.readAndReset();
+            _cumulativePos -= encoder.readAndReset();
             _state = RunAcc;
         }
 
@@ -744,6 +744,7 @@ class Mover
             }
         }
 
+        // Returns current position in graduations. Can be negative
         int32_t getCurrentPos()
         {
             int32_t pos = encoder.read();
@@ -756,13 +757,13 @@ class Mover
         int32_t getAbsolutePos()
         {
             // Invert pos
-            return _accumAbsolutePos - encoder.read();
+            return _cumulativePos - encoder.read();
         }
 
         void resetAbsolutePos()
         {
             encoder.readAndReset();
-            _accumAbsolutePos = 0;
+            _cumulativePos = 0;
         }
 
     private:
@@ -772,7 +773,7 @@ class Mover
         int _maxPWM = MAX_PWM;
         int32_t _currentPos;
         int32_t _lastPos;
-        int32_t _accumAbsolutePos;
+        int32_t _cumulativePos;
         int _currentPWM;
         unsigned long _timer;
         unsigned char _timePartCount;
@@ -889,7 +890,7 @@ class Mover
             }
         }
 
-        // End of the step we should go with MIN_PWM
+        // We should pass end of step with MIN_PWM
         // This function returns length of this final distance
         int getFinalDistance()
         {
@@ -1058,6 +1059,7 @@ void Runner::runAutomatic()
         digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
         isRunning = true;
         lastGraduations = 0;
+        mover.resetAbsolutePos();
         timer = millis();
         currentState = Beginning;
 #ifdef DEBUG_MODE
@@ -1080,19 +1082,15 @@ void Runner::runAutomatic()
     {
         digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
         currentState = Move;
-        int lastError = 0;
-        if (lastGraduations != 0)
-        {
-            int32_t absolutePos = mover.getAbsolutePos();
-            lastError = lastGraduations - absolutePos;
+        int32_t absolutePos = mover.getAbsolutePos();
+        int error = lastGraduations - absolutePos;
 #ifdef DEBUG_MODE
-            total += absolutePos;
-            Serial.println("stepGraduations = " + String(stepGraduations) + "  absolutePos = " +
-                String(absolutePos) + "  lastError = " + String(lastError));
+        total += absolutePos;
+        Serial.println("stepGraduations = " + String(stepGraduations) + "  absolutePos = " +
+            String(absolutePos) + "  error = " + String(error));
 #endif
-        }
         mover.resetAbsolutePos();
-        lastGraduations = stepGraduations + lastError;
+        lastGraduations = stepGraduations + error;
         mover.move(lastGraduations);
         return;
     }
@@ -1152,6 +1150,7 @@ void Runner::runManual()
         digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
         isRunning = true;
         lastGraduations = 0;
+        mover.resetAbsolutePos();
         timer = millis();
         currentState = Exposure;
 #ifdef DEBUG_MODE
@@ -1179,19 +1178,15 @@ void Runner::runManual()
     {
         timer = millis();
         currentState = Move;
-        int lastError = 0;
-        if (lastGraduations != 0)
-        {
-            int32_t absolutePos = mover.getAbsolutePos();
-            lastError = lastGraduations - absolutePos;
+        int32_t absolutePos = mover.getAbsolutePos();
+        int error = lastGraduations - absolutePos;
 #ifdef DEBUG_MODE
-            total += absolutePos;
-            Serial.println("stepGraduations = " + String(stepGraduations) + "  absolutePos = " +
-                String(absolutePos) + "  lastError = " + String(lastError));
+        total += absolutePos;
+        Serial.println("stepGraduations = " + String(stepGraduations) + "  absolutePos = " +
+            String(absolutePos) + "  error = " + String(error));
 #endif
-        }
         mover.resetAbsolutePos();
-        lastGraduations = stepGraduations + lastError;
+        lastGraduations = stepGraduations + error;
         mover.move(lastGraduations);
         return;
     }
