@@ -916,9 +916,12 @@ class Mover
                 case RunAcc:
                     _currentPos = getCurrentPos();
                     accelerate();
-                    analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
                     if (_currentPWM >= _maxPWM)
+                    {
+                        _currentPWM = _maxPWM;
                         _state = Run;
+                    }
+                    analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
                     break;
                     
                 case RunDec:
