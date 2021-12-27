@@ -28,9 +28,9 @@ EncButton<EB_TICK, 7> photoButton;  // pin 7
 EncButton<EB_TICK, 4> nextButton;   // pin 4
 
 const unsigned char stepsLength = 22;
-const int16_t steps[stepsLength] =
+const uint16_t steps[stepsLength] =
     { 2, 4, 5, 6, 8, 9, 10, 12, 15, 18, 20, 24, 30, 36, 40, 45, 60, 72, 90, 120, 180, 360 };
-char FindInSteps(int16_t numberOfSteps)
+signed char FindInSteps(uint16_t numberOfSteps)
 {
     for (unsigned char i = 0; i < stepsLength; i++)
     {
@@ -103,7 +103,7 @@ const callback_t MenuItemsDef::handlers[1] = {
 class PWMValidator
 {
     public:
-        static int validate(int pwm)
+        static unsigned char validate(int pwm)
         {
             if (pwm > MAX_PWM)
                 pwm = MAX_PWM;
@@ -117,17 +117,17 @@ class PWMValidator
 class Settings
 {
     public:
-        static int16_t getSteps()
+        static uint16_t getSteps()
         {
             return _steps;
         }
 
-        static void setSteps(int16_t value)
+        static void setSteps(uint16_t value)
         {
             _steps = value;
         }
 
-        static char getAcceleration()
+        static unsigned char getAcceleration()
         {
             return _acceleration;
         }
@@ -135,7 +135,7 @@ class Settings
         // Returns number of graduations for acceleration and deceleration from min to max PWM and vice versa.
         // Function converts current user-friendly value 1-10 to this value.
         // Note that real value shouldn't be less than 80 when GRADUATIONS = 4320.
-        static int getRealAcceleration()
+        static uint16_t getRealAcceleration()
         {
             int result = getAcceleration();
             result = abs(result - 11); // reverse
@@ -146,7 +146,7 @@ class Settings
             return result; // value in range from 80 to 440 when GRADUATIONS = 4320
         }
 
-        static void setAcceleration(char value)
+        static void setAcceleration(unsigned char value)
         {
             _acceleration = value;
         }
@@ -162,18 +162,18 @@ class Settings
         }
 
     private:
-        static int16_t _steps;
-        static char _acceleration;
+        static uint16_t _steps;
+        static unsigned char _acceleration;
 };
-int16_t Settings::_steps;
-char Settings::_acceleration;
+uint16_t Settings::_steps;
+unsigned char Settings::_acceleration;
 
 class Menu
 {
     public:
         char current;
 
-        void setItems(const MenuItem* items, char length)
+        void setItems(const MenuItem* items, unsigned char length)
         {
             _items = items;
             _length = length;
@@ -181,7 +181,7 @@ class Menu
             current = 0;
         }
 
-        void setItems(const int16_t* items, char length)
+        void setItems(const uint16_t* items, unsigned char length)
         {
             _array = items;
             _length = length;
@@ -189,7 +189,7 @@ class Menu
             current = 0;
         }
 
-        void setItems(char upperBound, char multiplier, char offset)
+        void setItems(unsigned char upperBound, unsigned char multiplier, unsigned char offset)
         {
             _length = upperBound;
             _offset = offset;
@@ -262,10 +262,10 @@ class Menu
 
         Mode _mode;
         const MenuItem* _items;
-        const int16_t* _array;
-        char _length;
-        char _offset;
-        char _multiplier;
+        const uint16_t* _array;
+        unsigned char _length;
+        unsigned char _offset;
+        unsigned char _multiplier;
         
         String _recentTop;
         String _recentBottom;

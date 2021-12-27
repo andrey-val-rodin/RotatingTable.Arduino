@@ -39,9 +39,9 @@ float EEMEM nonstopFrequencyOffset;
 unsigned char EEMEM menuIndexOffset;
 
 const unsigned char stepsLength = 22;
-const int16_t steps[stepsLength] =
+const uint16_t steps[stepsLength] =
     { 2, 4, 5, 6, 8, 9, 10, 12, 15, 18, 20, 24, 30, 36, 40, 45, 60, 72, 90, 120, 180, 360 };
-char FindInSteps(int16_t numberOfSteps)
+signed char FindInSteps(uint16_t numberOfSteps)
 {
     for (unsigned char i = 0; i < stepsLength; i++)
     {
@@ -122,7 +122,7 @@ const callback_t MenuItemsDef::handlers[topItemsLength - 1] = {
 class PWMValidator
 {
     public:
-        static int validate(int pwm)
+        static unsigned char validate(int pwm)
         {
             if (pwm > MAX_PWM)
                 pwm = MAX_PWM;
@@ -134,8 +134,8 @@ class PWMValidator
 };
 
 #ifdef DEBUG_MODE
-int lastLowSteps = 0;
-int lastHighSteps = 0;
+uint16_t lastLowSteps = 0;
+uint16_t lastHighSteps = 0;
 #endif
 class Settings
 {
@@ -143,24 +143,24 @@ class Settings
         static constexpr float lowNonstopFrequency = 0.5;
         static constexpr float highNonstopFrequency = 3.0;
         
-        static int16_t getSteps()
+        static uint16_t getSteps()
         {
             return validateSteps(eeprom_read_word(&stepsOffset));
         }
 
-        static int16_t validateSteps(int16_t value)
+        static uint16_t validateSteps(uint16_t value)
         {
             return FindInSteps(value) >= 0
                 ? value
                 : 24; // use default
         }
 
-        static void setSteps(int16_t value)
+        static void setSteps(uint16_t value)
         {
             eeprom_update_word(&stepsOffset, value);
         }
 
-        static char getAcceleration()
+        static unsigned char getAcceleration()
         {
             return validateAcceleration(eeprom_read_byte(&accelerationOffset));
         }
@@ -168,7 +168,7 @@ class Settings
         // Returns number of graduations for acceleration and deceleration from min to max PWM and vice versa.
         // Function converts current user-friendly value 1-10 to this value.
         // Note that real value shouldn't be less than 80 when GRADUATIONS = 4320.
-        static int getRealAcceleration()
+        static uint16_t getRealAcceleration()
         {
             int result = getAcceleration();
             result = abs(result - 11); // reverse
@@ -179,14 +179,14 @@ class Settings
             return result; // value in range from 80 to 440 when GRADUATIONS = 4320
         }
 
-        static char validateAcceleration(char value)
+        static unsigned char validateAcceleration(unsigned char value)
         {
             return 1 <= value && value <= 10
                 ? value
                 : 7; // use default
         }
 
-        static void setAcceleration(char value)
+        static void setAcceleration(unsigned char value)
         {
             eeprom_update_byte(&accelerationOffset, value);
         }
@@ -196,14 +196,14 @@ class Settings
             return validateDelay(eeprom_read_word(&delayOffset));
         }
 
-        static uint16_t validateDelay(int16_t value)
+        static uint16_t validateDelay(uint16_t value)
         {
-            return 0 <= value && value <= 5000 && value % 100 == 0
+            return value <= 5000 && value % 100 == 0
                 ? value
                 : 0; // use default
         }
 
-        static void setDelay(int16_t value)
+        static void setDelay(uint16_t value)
         {
             eeprom_update_word(&delayOffset, value);
         }
@@ -213,14 +213,14 @@ class Settings
             return validateExposure(eeprom_read_word(&exposureOffset));
         }
 
-        static uint16_t validateExposure(int16_t value)
+        static uint16_t validateExposure(uint16_t value)
         {
             return 100 <= value && value <= 500 && value % 100 == 0
                 ? value
                 : 100; // use default
         }
 
-        static void setExposure(int16_t value)
+        static void setExposure(uint16_t value)
         {
             eeprom_update_word(&exposureOffset, value);
         }
@@ -256,20 +256,20 @@ class Settings
                 : lowNonstopFrequency; // use default
         }
         
-        static int16_t getRealNonstopPWM()
+        static unsigned char getRealNonstopPWM()
         {
             float frequency = getNonstopFrequency();
-            int16_t result = frequencyToPWM(frequency);
+            unsigned char result = frequencyToPWM(frequency);
 #ifdef DEBUG_MODE
             Serial.println("frequency from EEPROM = " + String(frequency) + "\tpwm = " + String(result));
 #endif
             return PWMValidator::validate(result);
         }
 
-        static int16_t getLowRealNonstopPWM()
+        static unsigned char getLowRealNonstopPWM()
         {
             float frequency = lowNonstopFrequency;
-            int16_t result = PWMValidator::validate(frequencyToPWM(frequency));
+            unsigned char result = PWMValidator::validate(frequencyToPWM(frequency));
 #ifdef DEBUG_MODE
             if (lastLowSteps != getSteps())
             {
@@ -280,10 +280,10 @@ class Settings
             return result;
         }
 
-        static int16_t getHighRealNonstopPWM()
+        static unsigned char getHighRealNonstopPWM()
         {
             float frequency = highNonstopFrequency;
-            int16_t result = PWMValidator::validate(frequencyToPWM(frequency));
+            unsigned char result = PWMValidator::validate(frequencyToPWM(frequency));
 #ifdef DEBUG_MODE
             if (lastHighSteps != getSteps())
             {
@@ -302,7 +302,7 @@ class Settings
             eeprom_update_float(&nonstopFrequencyOffset, value);
         }
         
-        static void setNonstopPWM(int16_t value)
+        static void setNonstopPWM(unsigned char value)
         {
             float frequency = pwmToFrequency(value);
 #ifdef DEBUG_MODE
@@ -311,27 +311,32 @@ class Settings
             setNonstopFrequency(frequency);
         }
 
-        static char getMenuIndex()
+        static unsigned char getMenuIndex()
         {
             return validateMenuIndex(eeprom_read_byte(&menuIndexOffset));
         }
 
-        static char validateMenuIndex(char value)
+        static char validateMenuIndex(unsigned char value)
         {
-            return 0 <= value && value <= MenuItemsDef::topItemsLength
+            return value <= MenuItemsDef::topItemsLength
                 ? value
                 : 0; // use default
         }
 
-        static void setMenuIndex(char value)
+        static void setMenuIndex(unsigned char value)
         {
             eeprom_update_byte(&menuIndexOffset, value);
         }
 
     private:
-        static float getTimeOfTurn(int16_t pwm)
+        static float getTimeOfTurn(unsigned char pwm)
         {
-            static const char buff[] = { 97, 89, 81, 75, 69, 64, 59, 56, 52, 49, 47, 44, 42, 40, 38, 36, 35, 34, 32, 31, 30, 29, 28, 27, 26, 26, 25, 24, 24, 23, 22, 23, 23, 22, 22 };
+            static const unsigned char buff[] =
+            {
+                97, 89, 81, 75, 69, 64, 59, 56, 52, 49, 47, 44, 42, 40, 38, 36, 35,
+                34, 32, 31, 30, 29, 28, 27, 26, 26, 25, 24, 24, 23, 22, 23, 23, 22, 22
+            };
+            
             int index = pwm - MIN_PWM;
             if (index < 35)
                 return buff[index];
@@ -380,13 +385,13 @@ class Settings
             return pwm;
         }
 
-        static float pwmToFrequency(int16_t pwm)
+        static float pwmToFrequency(unsigned char pwm)
         {
             float steps = getSteps();
             return steps / getTimeOfTurn(pwm);
         }
 
-        static int16_t frequencyToPWM(float frequency)
+        static unsigned char frequencyToPWM(float frequency)
         {
             float steps = getSteps();
             float time = steps / frequency;
@@ -400,7 +405,7 @@ class Menu
     public:
         char current;
 
-        void setItems(const MenuItem* items, char length)
+        void setItems(const MenuItem* items, unsigned char length)
         {
             _items = items;
             _length = length;
@@ -408,7 +413,7 @@ class Menu
             current = 0;
         }
 
-        void setItems(const int16_t* items, char length)
+        void setItems(const uint16_t* items, unsigned char length)
         {
             _array = items;
             _length = length;
@@ -416,7 +421,7 @@ class Menu
             current = 0;
         }
 
-        void setItems(char upperBound, char multiplier, char offset)
+        void setItems(unsigned char upperBound, unsigned char multiplier, unsigned char offset)
         {
             _length = upperBound;
             _offset = offset;
@@ -489,10 +494,10 @@ class Menu
 
         Mode _mode;
         const MenuItem* _items;
-        const int16_t* _array;
-        char _length;
-        char _offset;
-        char _multiplier;
+        const uint16_t* _array;
+        unsigned char _length;
+        unsigned char _offset;
+        unsigned char _multiplier;
         
         String _recentTop;
         String _recentBottom;

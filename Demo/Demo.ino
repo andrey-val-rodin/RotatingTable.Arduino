@@ -10,12 +10,10 @@
 #define MOTOR2 9
 #define MOTOR_ENC1 2
 #define MOTOR_ENC2 3
+#define MIN_PWM 60
 #define MAX_PWM 255
 #define GRADUATIONS 4320 // number of graduations per turn
 #define DEGREE (GRADUATIONS / 360)
-
-int MIN_PWM = 10;
-const int delta = 1;
 
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
@@ -24,7 +22,7 @@ EncButton<EB_TICK, 12, 13, 11> enc; // pins 11, 12, 13
 class PWMValidator
 {
     public:
-        static int validate(int pwm)
+        static unsigned char validate(int pwm)
         {
             if (pwm > MAX_PWM)
                 pwm = MAX_PWM;
@@ -40,7 +38,7 @@ class Settings
     public:
         static unsigned char getAcceleration()
         {
-            return 10;
+            return validateAcceleration(_acceleration);
         }
 
         // Returns number of graduations for acceleration and deceleration from min to max PWM and vice versa.
@@ -57,11 +55,22 @@ class Settings
             return result; // value in range from 80 to 440 when GRADUATIONS = 4320
         }
 
-        static int16_t getSteps()
+        static unsigned char validateAcceleration(unsigned char value)
         {
-            return 2;
+            return 1 <= value && value <= 10
+                ? value
+                : 7; // use default
         }
+
+        static void setAcceleration(unsigned char value)
+        {
+            _acceleration = value;
+        }
+    
+    private:
+        static char _acceleration;
 };
+char Settings::_acceleration;
 
 class Mover
 {
@@ -338,9 +347,8 @@ class Mover
             else
             {
                 // Make correction
-#ifdef DEBUG_MODE
-                Serial.println("Error = " + String(error) + ", correction...");
-#endif
+                Serial.println("Error = " + String(error) + " Acceleration = " +
+                    String(Settings::getAcceleration()) + " _maxPWM = " + String(_maxPWM));
                 stop();
                 move(error, MIN_PWM);
                 _state = Correction;
@@ -407,189 +415,229 @@ class Mover
 };
 Mover mover;
 
-enum State
-{
-    Waiting,
-    Measuring,
-    Measured
-};
-
-class TurnMeasurer
+class Handler
 {
     public:
-        inline State getState()
+        virtual void start() = 0;
+
+        void stop()
         {
-            return _state;
+            mover.stop();
+            _isFinished = true;
         }
 
-        void tick()
+        virtual void tick() = 0;
+        
+        inline bool isFinished()
         {
-            switch (_state)
+            return _isFinished;
+        }
+
+    protected:
+        bool _isFinished = false;
+};
+
+class RunHandler : public Handler
+{
+    public:
+        virtual void start()
+        {
+            _isFinished = false;
+            _isStopping = false;
+            _seconds = random(4, 9);
+            int direction = random(0, 2);
+            if (direction == 0)
+                direction = -1;
+            _pwm = random(MIN_PWM, MAX_PWM + 1) * direction;
+            Settings::setAcceleration(random(1, 11));
+
+            mover.run(_pwm);
+            _timer = millis();
+        }
+
+        virtual void tick()
+        {
+            if (_isFinished)
+                return;
+                
+            if (_isStopping && !mover.isStopped())
+                return;
+
+            if (mover.isStopped())
             {
-                case Waiting:
-                case Measured:
-                    return;
-    
-                case Measuring:
-                    if (!mover.isStopped())
-                        return;
-    
-                    _stop = millis();
-                    _state = Measured;
+                _isFinished = true;
+                return;
             }
-        }
-    
-        void measure(int pwm)
-        {
-            _pwm = pwm;
-            _state = Measuring;
-            _start = millis();
-            mover.move(GRADUATIONS, _pwm);
-        }
-    
-        String getOutput()
-        {
-            float time = (_stop - _start) / 1000.0;
-            return String(_pwm) + "\t" + String(time);
-        }
-    
-        void cancel()
-        {
-            if (_state == Measuring)
+
+            if (millis() - _timer >= _seconds * 1000)
             {
-                mover.stop();
+                mover.softStop();
+                _isStopping = true;
             }
-    
-            _state = Waiting;
         }
 
     private:
-        State _state = Waiting;
-        unsigned long _start;
-        unsigned long _stop;
+        unsigned long _timer;
+        unsigned char _seconds;
         int _pwm;
+        bool _isStopping;
 };
+RunHandler runHandler;
 
-class Measurer
+class MoveHandler : public Handler
 {
     public:
-        inline State getState()
+        virtual void start()
         {
-            return _state;
-        }
+            _isFinished = false;
 
-        void tick()
-        {
-            _measurer.tick();
+            _pwm = random(MIN_PWM, MAX_PWM + 1);
+            _direction = random(0, 2);
+            if (_direction == 0)
+                _direction = -1;
+
+            _graduations = random(100, 300) * _direction;
             
-            switch (_state)
-            {
-                case Measuring:
-                    if (_measurer.getState() == Measured)
-                    {
-                        Serial.println(_measurer.getOutput());
-                        _pwm += delta;
-                        if (_pwm > MAX_PWM)
-                        {
-                            _state = Measured;
-                            return;
-                        }
-                        else
-                        {
-                            _measurer.measure(_pwm);
-                        }
-                    }
-                    return;
+            int acc = random(6, 11);
+            Settings::setAcceleration(acc);
 
-                default:
-                    return;
+            _count = random(4, 9);
+            _current = 0;
+
+            mover.move(_graduations, _pwm);
+        }
+        
+        virtual void tick()
+        {
+            if (_isFinished)
+                return;
+
+            if (mover.isStopped())
+            {
+                _current++;
+                if (_current >= _count)
+                    _isFinished = true;
+                else
+                {
+                    _graduations += _direction > 0 ? 100 : -100;
+                    mover.move(_graduations, _pwm);
+                }
             }
         }
 
-        void measure()
-        {
-            _pwm = MIN_PWM;
-            _state = Measuring;
-            _measurer.measure(_pwm);
-        }
-    
-        void cancel()
-        {
-            _measurer.cancel();
-            _state = Waiting;
-        }
-    
     private:
-        State _state = Waiting;
-        TurnMeasurer _measurer;
+        int _count;
+        int _current;
         int _pwm;
+        int _graduations;
+        int _direction;
 };
+MoveHandler moveHandler;
+
+class AccHandler : public Handler
+{
+    public:
+        virtual void start()
+        {
+            _isFinished = false;
+            _offset = random(0, 2);
+            if (_offset == 0)
+                _offset = -1;
+
+            _current = _offset > 0 ? 1 : 10;
+
+            int direction = random(0, 2);
+            if (direction == 0)
+                direction = -1;
+                
+            _distance = random(70, 300) * direction;
+
+            Settings::setAcceleration(_current);
+            mover.move(_distance);
+        }
+        
+        virtual void tick()
+        {
+            if (_isFinished)
+                return;
+
+            if (mover.isStopped())
+            {
+                _current += _offset;
+                if (_current < 1 || _current > 10)
+                    _isFinished = true;
+                else
+                {
+                    Settings::setAcceleration(_current);
+                    mover.move(_distance);
+                }
+            }
+        }
+
+   private:
+        int _offset;
+        int _current;
+        int _distance;
+};
+AccHandler accHandler;
 
 class Worker
 {
     public:
-        inline int getStage()
+        Worker()
         {
-            return _stage;
+            _current = random(0, 2);
+            _isRunning = false;
         }
-        
+
         void tick()
         {
-            if (_stage == 0)
+            if (enc.press())
+            {
+                if (_isRunning)
+                {
+                    _handlers[_current]->stop();
+                    _isRunning = false;
+                    _isPaused = false;
+                }
+                else
+                {
+                    _handlers[_current]->start();
+                    _isRunning = true;
+                    _isPaused = false;
+                }
+            }
+
+            if (!_isRunning)
                 return;
 
-            _measurer.tick();
-            
-            switch (_stage)
+            if (_isPaused)
             {
-                case 1:
-                    if (_measurer.getState() == Measured)
-                        setStage(2);
+                if (millis() - _timer < 800)
                     return;
 
-                default:
-                    return;
+                _handlers[_current]->start();
+                _isPaused = false;
             }
+
+            if (_handlers[_current]->isFinished())
+            {
+                _current = random(0, 3);
+                _timer = millis();
+                _isPaused = true;
+                return;
+            }
+
+            _handlers[_current]->tick();
         }
 
-        void start(int stage = 1)
-        {
-            setStage(stage);
-        }
-
-        void cancel()
-        {
-            setStage(0);
-            _measurer.cancel();
-        }
-        
     private:
-        int _stage = 0;
-        Measurer _measurer;
-
-        void setStage(int stage)
-        {
-            _stage = stage;
-            switch (_stage)
-            {
-                case 1:
-                    Serial.println("Стандартная частота");
-                    MIN_PWM = 10;
-                    break;
-
-                case 2:
-                    Serial.println("15000 Гц");
-                    SetPinFrequencySafe(MOTOR1, 15000);
-                    SetPinFrequencySafe(MOTOR2, 15000);
-                    MIN_PWM = 60;
-                    break;
-
-                default:
-                    return;
-            }
-            
-            _measurer.measure();
-        }
+        static const int _count = 3;
+        Handler* _handlers[_count] = { &runHandler, &moveHandler, &accHandler };
+        int _current;
+        bool _isRunning;
+        unsigned long _timer;
+        bool _isPaused;
 };
 Worker worker;
 
@@ -600,6 +648,9 @@ void setup()
     pinMode(MOTOR1, OUTPUT);
     pinMode(MOTOR2, OUTPUT);
 
+    SetPinFrequencySafe(MOTOR1, 15000);
+    SetPinFrequencySafe(MOTOR2, 15000);
+
     Serial.begin(9600);
 }
 
@@ -608,12 +659,4 @@ void loop()
     enc.tick();
     mover.tick();
     worker.tick();
-
-    if (enc.press())
-    {
-        if (worker.getStage() == 0)
-            worker.start(2);
-        else
-            worker.cancel();
-    }
 }
