@@ -88,28 +88,28 @@ struct MenuItem
 typedef void (*callback_t)();
 struct MenuItemsDef
 {
-    static const char topItemsLength = 6;
+    static const unsigned char topItemsLength = 6;
     static MenuItem topItems[topItemsLength];
 
-    static const char settingsItemsLength = 4;
+    static const unsigned char settingsItemsLength = 4;
     static MenuItem settingsItems[settingsItemsLength];
 
     static const callback_t handlers[topItemsLength - 1];
 };
 
 MenuItem MenuItemsDef::topItems[topItemsLength] = {
-    {"%Auto",       ""},
-    {"%Manual",     ""},
-    {"%Nonstop",    ""},
-    {"Video",       ""},
-    {"Rotate 90",   ""},
-    {"Settings",    ""}
+    {"%Auto",         ""},
+    {"%Manual",       ""},
+    {"%Nonstop",      ""},
+    {"Video",         ""},
+    {"Rotate 90\337", ""},
+    {"Settings",      ""}
 };
 MenuItem MenuItemsDef::settingsItems[settingsItemsLength] = {
-    {"Steps",        ""},
-    {"Acceleration", ""},
-    {"Delay",        ""},
-    {"Exposure",     ""}
+    {"Steps",         ""},
+    {"Acceleration",  ""},
+    {"Delay",         ""},
+    {"Exposure",      ""}
 };
 const callback_t MenuItemsDef::handlers[topItemsLength - 1] = {
     Runner::runAutomatic,
@@ -316,7 +316,7 @@ class Settings
             return validateMenuIndex(eeprom_read_byte(&menuIndexOffset));
         }
 
-        static char validateMenuIndex(unsigned char value)
+        static unsigned char validateMenuIndex(unsigned char value)
         {
             return value <= MenuItemsDef::topItemsLength
                 ? value
@@ -403,7 +403,7 @@ class Settings
 class Menu
 {
     public:
-        char current;
+        unsigned char current;
 
         void setItems(const MenuItem* items, unsigned char length)
         {
@@ -472,16 +472,14 @@ class Menu
 
         void next()
         {
-            current++;
-            if (current >= _length)
-                current = _length - 1;
+            if (current < _length - 1)
+                current++;
         }
 
         void prev()
         {
-            current--;
-            if (current < 0)
-                current = 0;
+            if (current > 0)
+                current--;
         }
 
     private:
@@ -502,17 +500,6 @@ class Menu
         String _recentTop;
         String _recentBottom;
 
-        void validateCurrent()
-        {
-            if (current < 0)
-                current = 0;
-            else
-            {
-                if (current >= _length)
-                    current = _length - 1;
-            }
-        }
-        
         void printTop(String text)
         {
             if (_recentTop != text)
@@ -550,14 +537,14 @@ class Menu
 class SettingEditor
 {
     public:
-        char settingNum;
+        unsigned char settingNum;
         
         SettingEditor(Menu* menu)
         {
             _menu = menu;
         }
         
-        void edit(char num)
+        void edit(unsigned char num)
         {
             settingNum = num;
             fillMenu();
@@ -566,7 +553,7 @@ class SettingEditor
 
         void update()
         {
-            unsigned char index = (unsigned char) _menu->current;
+            unsigned char index = _menu->current;
             switch (settingNum)
             {
                 case 0: // Steps
@@ -971,8 +958,7 @@ class Selector
         {
             if (hold)
             {
-                unsigned char index = (unsigned char) menu.current;
-                MenuItemsDef::handlers[index]();
+                MenuItemsDef::handlers[menu.current]();
                 return;
             }
             
@@ -990,7 +976,7 @@ class Selector
         }
         
     private:
-        char _level = 0;
+        unsigned char _level = 0;
         SettingEditor _editor;
 
         void press()
@@ -1368,7 +1354,6 @@ void Runner::runVideo()
     }
     else if (enc.turn() && mover.getState() == mover.State::Run)
     {
-        char direction = mover.isForward() ? 1 : -1;
         if (enc.left())
         {
             if (direction > 0 && mover.getCurrentPWM() <= MIN_PWM)
