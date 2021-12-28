@@ -6,12 +6,12 @@
 #include <EncButton.h>
 #pragma GCC diagnostic pop
 
-#define RUSSIAN // comment to use English
+//#define RUSSIAN // uncomment to use Russian
 
 #ifdef RUSSIAN
 #define _LCD_TYPE 1
 #include <LCD_1602_RUS.h>
-#elif
+#else
 #include <LiquidCrystal_I2C.h>
 #endif
 
@@ -30,7 +30,7 @@ Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
 #ifdef RUSSIAN
 LCD_1602_RUS lcd(0x27, 16, 2);
-#elif
+#else
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 #endif
 
@@ -519,7 +519,7 @@ class RunHandler : public Handler
 
 #ifdef RUSSIAN
             Displayer::display("Функция Run", String(_seconds) + "с");
-#elif
+#else
             Displayer::display("Run", String(_seconds) + "s");
 #endif
 
@@ -578,7 +578,7 @@ class MoveHandler : public Handler
 
 #ifdef RUSSIAN
             Displayer::display("Функция Move", String(_graduations));
-#elif
+#else
             Displayer::display("Move", String(_graduations));
 #endif
 
@@ -635,7 +635,7 @@ class AccHandler : public Handler
 
 #ifdef RUSSIAN
             Displayer::display("Ускорение", String(_current));
-#elif
+#else
             Displayer::display("Acceleration", String(_current));
 #endif
             
