@@ -1,9 +1,20 @@
 #define ENCODER_OPTIMIZE_INTERRUPTS
 #include <Encoder.h>
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
 #include <EncButton.h>
 #pragma GCC diagnostic pop
+
+#define RUSSIAN // comment to use English
+
+#ifdef RUSSIAN
+#define _LCD_TYPE 1
+#include <LCD_1602_RUS.h>
+#elif
+#include <LiquidCrystal_I2C.h>
+#endif
+
 #include <PWM.h>
 
 #define MOTOR1 10
@@ -16,6 +27,12 @@
 #define DEGREE (GRADUATIONS / 360)
 
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
+
+#ifdef RUSSIAN
+LCD_1602_RUS lcd(0x27, 16, 2);
+#elif
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+#endif
 
 EncButton<EB_TICK, 12, 13, 11> enc; // pins 11, 12, 13
 
@@ -71,6 +88,55 @@ class Settings
         static char _acceleration;
 };
 char Settings::_acceleration;
+
+class Displayer
+{
+    public:
+        static void display(String top, String bottom)
+        {
+            printTop(top);
+            printBottom(bottom);
+        }
+
+        static void printTop(String text)
+        {
+            if (_recentTop != text)
+            {
+                _recentTop = text;
+                text = fillWithSpaces(text);
+                lcd.setCursor(0, 0);
+                lcd.print(text);
+            }
+        }
+
+        static void printBottom(String text)
+        {
+            if (_recentBottom != text)
+            {
+                _recentBottom = text;
+                text = fillWithSpaces(text);
+                lcd.setCursor(0, 1);
+                lcd.print(text);
+            }
+        }
+
+    private:
+        static String _recentTop;
+        static String _recentBottom;
+
+        static String fillWithSpaces(String text)
+        {
+            String result;
+            result.reserve(16);
+            result = text;
+            while (result.length() < 16)
+                result += " ";
+
+            return result;
+        }
+};
+String Displayer::_recentTop;
+String Displayer::_recentBottom;
 
 class Mover
 {
@@ -451,6 +517,12 @@ class RunHandler : public Handler
             _pwm = random(MIN_PWM, MAX_PWM + 1) * direction;
             Settings::setAcceleration(random(1, 11));
 
+#ifdef RUSSIAN
+            Displayer::display("Функция Run", String(_seconds) + "с");
+#elif
+            Displayer::display("Run", String(_seconds) + "s");
+#endif
+
             mover.run(_pwm);
             _timer = millis();
         }
@@ -496,13 +568,19 @@ class MoveHandler : public Handler
             if (_direction == 0)
                 _direction = -1;
 
-            _graduations = random(100, 300) * _direction;
+            _graduations = random(10, 30) * _direction * 10;
             
             int acc = random(6, 11);
             Settings::setAcceleration(acc);
 
             _count = random(4, 9);
             _current = 0;
+
+#ifdef RUSSIAN
+            Displayer::display("Функция Move", String(_graduations));
+#elif
+            Displayer::display("Move", String(_graduations));
+#endif
 
             mover.move(_graduations, _pwm);
         }
@@ -520,6 +598,7 @@ class MoveHandler : public Handler
                 else
                 {
                     _graduations += _direction > 0 ? 100 : -100;
+                    Displayer::printBottom(String(_graduations));
                     mover.move(_graduations, _pwm);
                 }
             }
@@ -553,6 +632,13 @@ class AccHandler : public Handler
             _distance = random(70, 300) * direction;
 
             Settings::setAcceleration(_current);
+
+#ifdef RUSSIAN
+            Displayer::display("Ускорение", String(_current));
+#elif
+            Displayer::display("Acceleration", String(_current));
+#endif
+            
             mover.move(_distance);
         }
         
@@ -569,6 +655,7 @@ class AccHandler : public Handler
                 else
                 {
                     Settings::setAcceleration(_current);
+                    Displayer::printBottom(String(_current));
                     mover.move(_distance);
                 }
             }
@@ -599,6 +686,7 @@ class Worker
                     _handlers[_current]->stop();
                     _isRunning = false;
                     _isPaused = false;
+                    Displayer::display("", "");
                 }
                 else
                 {
@@ -625,6 +713,7 @@ class Worker
                 _current = random(0, 3);
                 _timer = millis();
                 _isPaused = true;
+                Displayer::display("", "");
                 return;
             }
 
@@ -647,6 +736,10 @@ void setup()
     pinMode(MOTOR_ENC2, INPUT);
     pinMode(MOTOR1, OUTPUT);
     pinMode(MOTOR2, OUTPUT);
+    lcd.init();
+    lcd.begin(16, 2);
+    lcd.clear();
+    lcd.backlight();
 
     SetPinFrequencySafe(MOTOR1, 15000);
     SetPinFrequencySafe(MOTOR2, 15000);
