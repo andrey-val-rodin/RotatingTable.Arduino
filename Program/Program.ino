@@ -505,9 +505,14 @@ class Menu
             if (_recentTop != text)
             {
                 _recentTop = text;
-                text = fillWithSpaces(text);
                 lcd.setCursor(0, 0);
                 lcd.print(text);
+
+                // Clear rest of space
+                for (int i = text.length(); i <= 16; i++)
+                {
+                    lcd.print(' ');
+                }
             }
         }
 
@@ -516,21 +521,15 @@ class Menu
             if (_recentBottom != text)
             {
                 _recentBottom = text;
-                text = fillWithSpaces(text);
                 lcd.setCursor(0, 1);
                 lcd.print(text);
+
+                // Clear rest of space
+                for (int i = text.length(); i <= 16; i++)
+                {
+                    lcd.print(' ');
+                }
             }
-        }
-
-        String fillWithSpaces(String text)
-        {
-            String result;
-            result.reserve(16);
-            result = text;
-            while (result.length() < 16)
-                result += " ";
-
-            return result;
         }
 };
 
