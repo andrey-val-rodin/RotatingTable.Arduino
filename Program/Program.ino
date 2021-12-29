@@ -1386,7 +1386,7 @@ void Runner::runRotate()
 
     if (!isRunning)
     {
-        selector.menu.display("Rotation...", "<-  ->");
+        selector.menu.display("Rotation...", "<-  90\337  ->");
 #ifdef DEBUG_MODE
         mover.resetAbsolutePos();
 #endif
