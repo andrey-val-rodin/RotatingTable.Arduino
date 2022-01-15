@@ -4,27 +4,106 @@
 #pragma GCC diagnostic ignored "-Wsign-compare"
 #include <EncButton.h>
 #pragma GCC diagnostic pop
+#include <LiquidCrystal_I2C.h>
 #include <PWM.h>
 
 #define MOTOR1 10
 #define MOTOR2 9
 #define MOTOR_ENC1 2
 #define MOTOR_ENC2 3
+#define CAMERA 5
+#define SHUTTER 6
+#define CAMERA_LOW HIGH
+#define CAMERA_HIGH LOW
+#define MIN_PWM 60
 #define MAX_PWM 255
 #define GRADUATIONS 4320 // number of graduations per turn
 #define DEGREE (GRADUATIONS / 360)
 
-int MIN_PWM = 10;
-const int delta = 1;
-
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 EncButton<EB_TICK, 12, 13, 11> enc; // pins 11, 12, 13
+EncButton<EB_TICK, 7> photoButton;  // pin 7
+EncButton<EB_TICK, 4> nextButton;   // pin 4
+
+const unsigned char stepsLength = 22;
+const uint16_t steps[stepsLength] =
+    { 2, 4, 5, 6, 8, 9, 10, 12, 15, 18, 20, 24, 30, 36, 40, 45, 60, 72, 90, 120, 180, 360 };
+signed char FindInSteps(uint16_t numberOfSteps)
+{
+    for (unsigned char i = 0; i < stepsLength; i++)
+    {
+        if (steps[i] == numberOfSteps)
+            return i;
+    }
+
+    return -1;
+}
+
+class Runner
+{
+    public:
+        static const int delta = 5; // value to increment/decrement pwm
+        
+        static void runAutomatic();
+        
+    private:
+        enum State : char
+        {
+            Waiting,
+            Beginning,
+            Delay,
+            Exposure,
+            Move
+        };
+        
+        static void finalize();
+        static void incrementStep();
+        static void display(String top, String stepName);
+};
+Runner runner;
+
+struct MenuItem
+{
+    String top;
+    String bottom;
+};
+
+typedef void (*callback_t)();
+struct MenuItemsDef
+{
+    static const char topItemsLength = 6;
+    static MenuItem topItems[topItemsLength];
+
+    static const char settingsItemsLength = 4;
+    static MenuItem settingsItems[settingsItemsLength];
+
+    static const callback_t handlers[1];
+};
+
+MenuItem MenuItemsDef::topItems[topItemsLength] = {
+    {"%Auto",       ""},
+    {"%Manual",     ""},
+    {"%Nonstop",    ""},
+    {"Video",       ""},
+    {"Rotate 90",   ""},
+    {"Settings",    ""}
+};
+MenuItem MenuItemsDef::settingsItems[settingsItemsLength] = {
+    {"Steps",        ""},
+    {"Acceleration", ""},
+    {"Delay",        ""},
+    {"Exposure",     ""}
+};
+const callback_t MenuItemsDef::handlers[1] = {
+    Runner::runAutomatic
+};
 
 class PWMValidator
 {
     public:
-        static int validate(int pwm)
+        static unsigned char validate(int pwm)
         {
             if (pwm > MAX_PWM)
                 pwm = MAX_PWM;
@@ -38,9 +117,19 @@ class PWMValidator
 class Settings
 {
     public:
+        static uint16_t getSteps()
+        {
+            return _steps;
+        }
+
+        static void setSteps(uint16_t value)
+        {
+            _steps = value;
+        }
+
         static unsigned char getAcceleration()
         {
-            return 10;
+            return _acceleration;
         }
 
         // Returns number of graduations for acceleration and deceleration from min to max PWM and vice versa.
@@ -57,11 +146,175 @@ class Settings
             return result; // value in range from 80 to 440 when GRADUATIONS = 4320
         }
 
-        static int16_t getSteps()
+        static void setAcceleration(unsigned char value)
         {
-            return 2;
+            _acceleration = value;
+        }
+
+        static uint16_t getDelay()
+        {
+            return 0;
+        }
+
+        static uint16_t getExposure()
+        {
+            return 100;
+        }
+
+    private:
+        static uint16_t _steps;
+        static unsigned char _acceleration;
+};
+uint16_t Settings::_steps;
+unsigned char Settings::_acceleration;
+
+class Menu
+{
+    public:
+        char current;
+
+        void setItems(const MenuItem* items, unsigned char length)
+        {
+            _items = items;
+            _length = length;
+            _mode = MenuItems;
+            current = 0;
+        }
+
+        void setItems(const uint16_t* items, unsigned char length)
+        {
+            _array = items;
+            _length = length;
+            _mode = Array;
+            current = 0;
+        }
+
+        void setItems(unsigned char upperBound, unsigned char multiplier, unsigned char offset)
+        {
+            _length = upperBound;
+            _offset = offset;
+            _multiplier = multiplier;
+            _mode = Range;
+            current = 0;
+        }
+
+        void display()
+        {
+            String top;
+            unsigned char index = (unsigned char) current;
+            switch (_mode)
+            {
+                case MenuItems:
+                    top = _items[index].top;
+                    if (top.startsWith("%"))
+                        top = formatSteps(top);
+                    printTop(top);
+                    printBottom(_items[index].bottom);
+                    break;
+
+                case Array:
+                    printTop(String(_array[index], DEC));
+                    printBottom("");
+                    break;
+                
+                case Range:
+                    printTop(String((current + _offset) * _multiplier, DEC));
+                    printBottom("");
+                    break;
+            }
+        }
+
+        String formatSteps(String top)
+        {
+            top.remove(0, 1); // remove % sign
+            char strBuf[20];
+            sprintf(strBuf, "%s (%d)", top.c_str(), Settings::getSteps());
+            return strBuf;
+        }
+        
+        void display(String top, String bottom)
+        {
+            printTop(top);
+            printBottom(bottom);
+        }
+
+        void next()
+        {
+            current++;
+            if (current >= _length)
+                current = _length - 1;
+        }
+
+        void prev()
+        {
+            current--;
+            if (current < 0)
+                current = 0;
+        }
+
+    private:
+        enum Mode : char
+        {
+            MenuItems,
+            Array,
+            Range
+        };
+
+        Mode _mode;
+        const MenuItem* _items;
+        const uint16_t* _array;
+        unsigned char _length;
+        unsigned char _offset;
+        unsigned char _multiplier;
+        
+        String _recentTop;
+        String _recentBottom;
+
+        void validateCurrent()
+        {
+            if (current < 0)
+                current = 0;
+            else
+            {
+                if (current >= _length)
+                    current = _length - 1;
+            }
+        }
+        
+        void printTop(String text)
+        {
+            if (_recentTop != text)
+            {
+                _recentTop = text;
+                text = fillWithSpaces(text);
+                lcd.setCursor(0, 0);
+                lcd.print(text);
+            }
+        }
+
+        void printBottom(String text)
+        {
+            if (_recentBottom != text)
+            {
+                _recentBottom = text;
+                text = fillWithSpaces(text);
+                lcd.setCursor(0, 1);
+                lcd.print(text);
+            }
+        }
+
+        String fillWithSpaces(String text)
+        {
+            String result;
+            result.reserve(16);
+            result = text;
+            while (result.length() < 16)
+                result += " ";
+
+            return result;
         }
 };
+Menu menu;
 
 class Mover
 {
@@ -338,9 +591,8 @@ class Mover
             else
             {
                 // Make correction
-#ifdef DEBUG_MODE
-                Serial.println("Error = " + String(error) + ", correction...");
-#endif
+                Serial.print("Error->");
+
                 stop();
                 move(error, MIN_PWM);
                 _state = Correction;
@@ -407,6 +659,97 @@ class Mover
 };
 Mover mover;
 
+int16_t stepNumber = 0;
+unsigned long timer = 0;
+bool isRunning = false;
+void Runner::runAutomatic()
+{
+    const String mode = "Auto...";
+    const String stepName = "photo";
+    static State currentState;
+    static int32_t lastGraduations;
+    
+    if (!mover.isStopped())
+        return;
+
+    int16_t stepCount = Settings::getSteps();
+    int16_t stepGraduations = GRADUATIONS / stepCount;
+    if (!isRunning)
+    {
+        // Starting
+        stepNumber = 0;
+        digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
+        isRunning = true;
+        lastGraduations = 0;
+        mover.resetAbsolutePos();
+        timer = millis();
+        currentState = Beginning;
+        return;
+    }
+
+    if (currentState == Beginning && millis() - timer >= Settings::getExposure())
+    {
+        stepNumber++;
+        display(mode, stepName);
+        digitalWrite(SHUTTER, CAMERA_HIGH); // make first photo
+        timer = millis();
+        currentState = Exposure;
+        return;
+    }
+    
+    if (currentState == Exposure && millis() - timer >= Settings::getExposure())
+    {
+        digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
+        currentState = Move;
+        int32_t absolutePos = mover.getAbsolutePos();
+        int error = lastGraduations - absolutePos;
+        mover.resetAbsolutePos();
+        lastGraduations = stepGraduations + error;
+        mover.move(lastGraduations);
+        return;
+    }
+    
+    if (currentState == Move)
+    {
+        if (stepNumber < stepCount)
+        {
+            timer = millis();
+            currentState = Delay;
+        }
+        else
+        {
+            finalize();
+        }
+        return;
+    }
+
+    if (currentState == Delay && millis() - timer >= Settings::getDelay())
+    {
+        stepNumber++;
+        display(mode, stepName);
+        digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
+        timer = millis();
+        currentState = Exposure;
+    }
+}
+
+void Runner::finalize()
+{
+    isRunning = false;
+    mover.stop();
+    stepNumber = 0;
+    digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
+    digitalWrite(CAMERA, CAMERA_LOW); // release camera
+    enc.resetState(); // reset encoder
+}
+
+void Runner::display(String top, String stepName)
+{
+    char strBuf[20];
+    sprintf(strBuf, "%s %d (%d)", stepName.c_str(), stepNumber, Settings::getSteps());
+    menu.display(top, strBuf);
+}
+
 enum State
 {
     Waiting,
@@ -431,26 +774,26 @@ class TurnMeasurer
                     return;
     
                 case Measuring:
-                    if (!mover.isStopped())
+                    Runner::runAutomatic();
+                    if (isRunning)
                         return;
-    
+
                     _stop = millis();
                     _state = Measured;
             }
         }
     
-        void measure(int pwm)
+        void measure(int acceleration)
         {
-            _pwm = pwm;
+            Settings::setAcceleration(acceleration);
             _state = Measuring;
             _start = millis();
-            mover.move(GRADUATIONS, _pwm);
         }
     
         String getOutput()
         {
             float time = (_stop - _start) / 1000.0;
-            return String(_pwm) + "\t" + String(time);
+            return "\t" + String(time);
         }
     
         void cancel()
@@ -467,7 +810,6 @@ class TurnMeasurer
         State _state = Waiting;
         unsigned long _start;
         unsigned long _stop;
-        int _pwm;
 };
 
 class Measurer
@@ -487,16 +829,16 @@ class Measurer
                 case Measuring:
                     if (_measurer.getState() == Measured)
                     {
-                        Serial.println(_measurer.getOutput());
-                        _pwm += delta;
-                        if (_pwm > MAX_PWM)
+                        Serial.print(_measurer.getOutput());
+                        _acceleration++;
+                        if (_acceleration > 10)
                         {
                             _state = Measured;
                             return;
                         }
                         else
                         {
-                            _measurer.measure(_pwm);
+                            _measurer.measure(_acceleration);
                         }
                     }
                     return;
@@ -506,11 +848,12 @@ class Measurer
             }
         }
 
-        void measure()
+        void measure(int fromAcc)
         {
-            _pwm = MIN_PWM;
+            _acceleration = fromAcc;
             _state = Measuring;
-            _measurer.measure(_pwm);
+            Serial.print(Settings::getSteps());
+            _measurer.measure(_acceleration);
         }
     
         void cancel()
@@ -522,74 +865,70 @@ class Measurer
     private:
         State _state = Waiting;
         TurnMeasurer _measurer;
-        int _pwm;
+        int _acceleration;
 };
 
 class Worker
 {
     public:
-        inline int getStage()
+        inline State getState()
         {
-            return _stage;
+            return _state;
         }
         
         void tick()
         {
-            if (_stage == 0)
+            if (_state == Waiting)
                 return;
-
+                
             _measurer.tick();
-            
-            switch (_stage)
-            {
-                case 1:
-                    if (_measurer.getState() == Measured)
-                        setStage(2);
-                    return;
 
-                default:
+            if(_measurer.getState() == Measured)
+            {
+                _stepIndex++;
+                if (_stepIndex > _stepIndexTo)
+                {
+                    _state = Waiting;
                     return;
+                }
+
+                Serial.println();
+                Settings::setSteps(steps[_stepIndex]);
+                _measurer.measure(_fromAcc);
             }
         }
 
-        void start(int stage = 1)
+        void start(int fromAcc = 1, int stepIndexFrom = 0, int stepIndexTo = stepsLength - 1)
         {
-            setStage(stage);
+            _fromAcc = fromAcc;
+            _stepIndexFrom = stepIndexFrom;
+            _stepIndexTo = stepIndexTo;
+            _state = Measuring;
+            _stepIndex = _stepIndexFrom;
+            Settings::setSteps(steps[_stepIndex]);
+            Settings::setAcceleration(1);
+            for (int i = fromAcc; i <= 10; i++)
+            {
+                Serial.print("\t");
+                Serial.print(i);              
+            }
+            Serial.println();
+            _measurer.measure(_fromAcc);
         }
 
         void cancel()
         {
-            setStage(0);
             _measurer.cancel();
+            _state = Waiting;
         }
         
     private:
-        int _stage = 0;
+        State _state = Waiting;
         Measurer _measurer;
-
-        void setStage(int stage)
-        {
-            _stage = stage;
-            switch (_stage)
-            {
-                case 1:
-                    Serial.println("Стандартная частота");
-                    MIN_PWM = 10;
-                    break;
-
-                case 2:
-                    Serial.println("15000 Гц");
-                    SetPinFrequencySafe(MOTOR1, 15000);
-                    SetPinFrequencySafe(MOTOR2, 15000);
-                    MIN_PWM = 60;
-                    break;
-
-                default:
-                    return;
-            }
-            
-            _measurer.measure();
-        }
+        unsigned char _stepIndex;
+        unsigned char _stepIndexFrom;
+        unsigned char _stepIndexTo;
+        int _fromAcc;
 };
 Worker worker;
 
@@ -599,6 +938,21 @@ void setup()
     pinMode(MOTOR_ENC2, INPUT);
     pinMode(MOTOR1, OUTPUT);
     pinMode(MOTOR2, OUTPUT);
+    pinMode(CAMERA, OUTPUT);
+    pinMode(SHUTTER, OUTPUT);
+    digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
+    digitalWrite(CAMERA, CAMERA_LOW); // release camera
+    
+    lcd.init();
+    lcd.begin(16, 2);
+    lcd.clear();
+    lcd.backlight();
+
+    photoButton.setButtonLevel(HIGH);
+    nextButton.setButtonLevel(HIGH);
+
+    SetPinFrequencySafe(MOTOR1, 15000);
+    SetPinFrequencySafe(MOTOR2, 15000);
 
     Serial.begin(9600);
 }
@@ -606,13 +960,15 @@ void setup()
 void loop()
 {
     enc.tick();
+    photoButton.tick();
+    nextButton.tick();
     mover.tick();
     worker.tick();
 
     if (enc.press())
     {
-        if (worker.getStage() == 0)
-            worker.start(2);
+        if (worker.getState() == Waiting)
+            worker.start();
         else
             worker.cancel();
     }
