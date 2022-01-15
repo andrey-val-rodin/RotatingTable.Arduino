@@ -606,11 +606,11 @@ class Mover
             switch (Settings::getAcceleration())
             {
                 case 10:
-                    return _graduations > 10 * DEGREE ? 16 : 12;
+                    return _graduations >= 10 * DEGREE ? 18 : 14;
                 case 9:
-                    return _graduations > 10 * DEGREE ? 10 : 8;
+                    return _graduations >= 10 * DEGREE ? 10 : 8;
                 case 8:
-                    return _graduations > 10 * DEGREE ? 6 : 4;
+                    return _graduations >= 10 * DEGREE ? 6 : 4;
                 case 7:
                     return 2;
                 default:

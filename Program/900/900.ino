@@ -331,47 +331,69 @@ class Settings
     private:
         static float getTimeOfTurn(unsigned char pwm)
         {
-            static const unsigned char buff[] =
+            static const unsigned char buff[] = 
             {
-                97, 89, 81, 75, 69, 64, 59, 56, 52, 49, 47, 44, 42, 40, 38, 36, 35,
-                34, 32, 31, 30, 29, 28, 27, 26, 26, 25, 24, 24, 23, 22, 23, 23, 22, 22
+                255, 244, 216, 188, 169, 152, 140, 128, 118, 109, 103, 97, 91, 86, 82, 77, 74, 70,
+                68, 65, 62, 60, 58, 56, 55, 53, 51, 50, 49, 48, 47, 46, 45, 44, 43, 42, 41, 41, 40, 39
             };
             
             int index = pwm - MIN_PWM;
-            if (index < 35)
+            if (index < 40)
                 return buff[index];
-            else if (index < 38)
-                return 21;
-            else if (index < 41)
-                return 20;
+            else if (index < 42)
+                return 38;
             else if (index < 44)
-                return 19;
+                return 37;
+            else if (index < 46)
+                return 36;
             else if (index < 48)
-                return 18;
-            else if (index < 53)
-                return 17;
+                return 35;
+            else if (index < 49)
+                return 34;
+            else if (index < 51)
+                return 33;
+            else if (index < 54)
+                return 32;
             else if (index < 58)
-                return 16;
-            else if (index < 65)
-                return 15;
-            else if (index < 73)
-                return 14;
-            else if (index < 83)
-                return 13;
+                return 31;
+            else if (index < 61)
+                return 30;
+            else if (index < 64)
+                return 29;
+            else if (index < 68)
+                return 28;
+            else if (index < 72)
+                return 27;
+            else if (index < 76)
+                return 26;
+            else if (index < 80)
+                return 25;
+            else if (index < 85)
+                return 24;
+            else if (index < 89)
+                return 23;
             else if (index < 93)
-                return 12;
+                return 22;
+            else if (index < 98)
+                return 21;
             else if (index < 103)
-                return 11;
-            else if (index < 115)
-                return 10;
-            else if (index < 126)
-                return 9;
+                return 20;
+            else if (index < 109)
+                return 19;
+            else if (index < 119)
+                return 18;
+            else if (index < 124)
+                return 17;
+            else if (index < 130)
+                return 16;
             else if (index < 140)
-                return 8;
-            else if (index < 163)
-                return 7;
+                return 15;
+            else if (index < 146)
+                return 14;
+            else if (index < 153)
+                return 13;
             else
-                return 6;
+                return 12;
         }
 
         static float getPWMOfTurn(float time)
