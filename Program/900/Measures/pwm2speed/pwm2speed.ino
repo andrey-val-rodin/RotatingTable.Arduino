@@ -580,7 +580,7 @@ class Worker
                     Serial.println("15000 Гц");
                     SetPinFrequencySafe(MOTOR1, 15000);
                     SetPinFrequencySafe(MOTOR2, 15000);
-                    MIN_PWM = 60;
+                    MIN_PWM = 65;
                     break;
 
                 default:
