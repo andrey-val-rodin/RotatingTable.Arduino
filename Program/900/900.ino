@@ -1152,6 +1152,7 @@ void Runner::runManual()
     const String mode = "Manual...";
     const String stepName = "step";
     static State currentState;
+    static bool needToMove;
     static int32_t lastGraduations;
 #ifdef DEBUG_MODE
     static int total = 0;
@@ -1169,6 +1170,7 @@ void Runner::runManual()
     {
         // Starting
         stepNumber = 1;
+        needToMove = false;
         display(mode, stepName);
         digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
         isRunning = true;
@@ -1186,6 +1188,22 @@ void Runner::runManual()
     {
         digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
         currentState = Waiting;
+        if (needToMove)
+        {
+            needToMove = false;
+            currentState = Move;
+            int32_t absolutePos = mover.getAbsolutePos();
+            int error = lastGraduations - absolutePos;
+#ifdef DEBUG_MODE
+            total += absolutePos;
+            Serial.println("stepGraduations = " + String(stepGraduations) + "  absolutePos = " +
+                String(absolutePos) + "  error = " + String(error));
+#endif
+            mover.resetAbsolutePos();
+            lastGraduations = stepGraduations + error;
+            mover.move(lastGraduations);
+        }
+	
         return;
     }
 
@@ -1199,18 +1217,10 @@ void Runner::runManual()
 
     if (nextButton.press() && currentState == Waiting)
     {
+        digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
         timer = millis();
-        currentState = Move;
-        int32_t absolutePos = mover.getAbsolutePos();
-        int error = lastGraduations - absolutePos;
-#ifdef DEBUG_MODE
-        total += absolutePos;
-        Serial.println("stepGraduations = " + String(stepGraduations) + "  absolutePos = " +
-            String(absolutePos) + "  error = " + String(error));
-#endif
-        mover.resetAbsolutePos();
-        lastGraduations = stepGraduations + error;
-        mover.move(lastGraduations);
+        currentState = Exposure;
+        needToMove = true;
         return;
     }
 
