@@ -341,64 +341,28 @@ class Settings
         {
             static const unsigned char buff[] = 
             {
-                255, 244, 216, 188, 169, 152, 140, 128, 118, 109, 103, 97, 91, 86, 82, 77, 74, 70,
-                68, 65, 62, 60, 58, 56, 55, 53, 51, 50, 49, 48, 47, 46, 45, 44, 43, 42, 41, 41, 40, 39
+                173, 157, 142, 130, 120, 112, 104, 97, 92, 88, 82, 78, 74, 71, 68, 65, 62, 60, 58, 56, 54, 53, 51,
+                50, 49, 48, 46, 45, 44, 44, 43, 42, 41, 40, 40, 39, 38, 38, 37, 37, 36, 36, 35, 34, 34, 34, 33, 33,
+                33, 32, 32, 31, 31, 31, 30, 30, 30, 29, 29, 29, 28, 28, 28, 28, 27, 27, 27, 27, 26, 26, 26, 25, 25,
+                25, 25, 25, 25, 24, 24, 24, 24, 23, 23, 23, 23, 22, 22, 22, 22, 21, 21, 21, 21, 21, 21, 20, 20, 20, 20
             };
             
             int index = pwm - MIN_PWM;
-            if (index < 40)
+            if (index < 99)
                 return buff[index];
-            else if (index < 42)
-                return 38;
-            else if (index < 44)
-                return 37;
-            else if (index < 46)
-                return 36;
-            else if (index < 48)
-                return 35;
-            else if (index < 49)
-                return 34;
-            else if (index < 51)
-                return 33;
-            else if (index < 54)
-                return 32;
-            else if (index < 58)
-                return 31;
-            else if (index < 61)
-                return 30;
-            else if (index < 64)
-                return 29;
-            else if (index < 68)
-                return 28;
-            else if (index < 72)
-                return 27;
-            else if (index < 76)
-                return 26;
-            else if (index < 80)
-                return 25;
-            else if (index < 85)
-                return 24;
-            else if (index < 89)
-                return 23;
-            else if (index < 93)
-                return 22;
-            else if (index < 98)
-                return 21;
-            else if (index < 103)
-                return 20;
-            else if (index < 109)
+            else if (index < 105)
                 return 19;
-            else if (index < 119)
+            else if (index < 114)
                 return 18;
-            else if (index < 124)
+            else if (index < 119)
                 return 17;
-            else if (index < 130)
+            else if (index < 126)
                 return 16;
-            else if (index < 140)
+            else if (index < 137)
                 return 15;
-            else if (index < 146)
+            else if (index < 140)
                 return 14;
-            else if (index < 153)
+            else if (index < 149)
                 return 13;
             else
                 return 12;
