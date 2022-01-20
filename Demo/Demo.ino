@@ -6,7 +6,7 @@
 #include <EncButton.h>
 #pragma GCC diagnostic pop
 
-//#define RUSSIAN // uncomment to use Russian
+#define RUSSIAN // comment to use English
 
 #ifdef RUSSIAN
 #define _LCD_TYPE 1
@@ -35,6 +35,14 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 #endif
 
 EncButton<EB_TICK, 12, 13, 11> enc; // pins 11, 12, 13
+EncButton<EB_TICK, 8> startButton;  // pin 8
+
+bool startPressed()
+{
+    bool encPressed = enc.press();
+    bool startBtnPressed = startButton.press();
+    return encPressed || startBtnPressed;    
+}
 
 class PWMValidator
 {
@@ -413,8 +421,6 @@ class Mover
             else
             {
                 // Make correction
-                Serial.println("Error = " + String(error) + " Acceleration = " +
-                    String(Settings::getAcceleration()) + " _maxPWM = " + String(_maxPWM));
                 stop();
                 move(error, MIN_PWM);
                 _state = Correction;
@@ -428,11 +434,11 @@ class Mover
             switch (Settings::getAcceleration())
             {
                 case 10:
-                    return _graduations > 10 * DEGREE ? 16 : 12;
+                    return _graduations >= 10 * DEGREE ? 18 : 14;
                 case 9:
-                    return _graduations > 10 * DEGREE ? 10 : 8;
+                    return _graduations >= 10 * DEGREE ? 10 : 8;
                 case 8:
-                    return _graduations > 10 * DEGREE ? 6 : 4;
+                    return _graduations >= 10 * DEGREE ? 6 : 4;
                 case 7:
                     return 2;
                 default:
@@ -679,7 +685,7 @@ class Worker
 
         void tick()
         {
-            if (enc.press())
+            if (startPressed())
             {
                 if (_isRunning)
                 {
@@ -741,15 +747,16 @@ void setup()
     lcd.clear();
     lcd.backlight();
 
+    enc.setButtonLevel(HIGH);
+    startButton.setButtonLevel(HIGH);
     SetPinFrequencySafe(MOTOR1, 15000);
     SetPinFrequencySafe(MOTOR2, 15000);
-
-    Serial.begin(9600);
 }
 
 void loop()
 {
     enc.tick();
+    startButton.tick();
     mover.tick();
     worker.tick();
 }
