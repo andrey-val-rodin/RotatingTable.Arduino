@@ -15,7 +15,7 @@
 #define SHUTTER 6
 #define CAMERA_LOW HIGH
 #define CAMERA_HIGH LOW
-#define MIN_PWM 60
+#define MIN_PWM 65
 #define MAX_PWM 255
 #define GRADUATIONS 4320 // number of graduations per turn
 #define DEGREE (GRADUATIONS / 360)
@@ -333,45 +333,30 @@ class Settings
         {
             static const unsigned char buff[] =
             {
-                97, 89, 81, 75, 69, 64, 59, 56, 52, 49, 47, 44, 42, 40, 38, 36, 35,
-                34, 32, 31, 30, 29, 28, 27, 26, 26, 25, 24, 24, 23, 22, 23, 23, 22, 22
+                73, 69, 63, 60, 56, 52, 49, 46, 44, 41, 39, 38, 36, 35, 34, 32, 31, 30, 29, 28, 27, 26,
+                25, 25, 24, 24, 24, 24, 23, 23, 22, 22, 22, 21, 21, 20, 20, 20, 19, 19, 19, 19, 18, 18,
+                18, 18, 17, 17, 17, 17, 17, 16, 16, 16, 16, 16, 16, 15, 15, 15, 15, 15, 15
             };
             
             int index = pwm - MIN_PWM;
-            if (index < 35)
+            if (index < 63)
                 return buff[index];
-            else if (index < 38)
-                return 21;
-            else if (index < 41)
-                return 20;
-            else if (index < 44)
-                return 19;
-            else if (index < 48)
-                return 18;
-            else if (index < 53)
-                return 17;
-            else if (index < 58)
-                return 16;
-            else if (index < 65)
-                return 15;
-            else if (index < 73)
+            else if (index < 72)
                 return 14;
-            else if (index < 83)
+            else if (index < 81)
                 return 13;
-            else if (index < 93)
+            else if (index < 90)
                 return 12;
-            else if (index < 103)
+            else if (index < 101)
                 return 11;
-            else if (index < 115)
+            else if (index < 112)
                 return 10;
-            else if (index < 126)
+            else if (index < 124)
                 return 9;
-            else if (index < 140)
+            else if (index < 138)
                 return 8;
-            else if (index < 163)
-                return 7;
             else
-                return 6;
+                return 7;
         }
 
         static float getPWMOfTurn(float time)
@@ -888,11 +873,11 @@ class Mover
             switch (Settings::getAcceleration())
             {
                 case 10:
-                    return _graduations > 10 * DEGREE ? 16 : 12;
+                    return _graduations >= 10 * DEGREE ? 18 : 14;
                 case 9:
-                    return _graduations > 10 * DEGREE ? 10 : 8;
+                    return _graduations >= 10 * DEGREE ? 10 : 8;
                 case 8:
-                    return _graduations > 10 * DEGREE ? 6 : 4;
+                    return _graduations >= 10 * DEGREE ? 6 : 4;
                 case 7:
                     return 2;
                 default:

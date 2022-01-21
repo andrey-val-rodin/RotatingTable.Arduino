@@ -24,7 +24,7 @@ EncButton<EB_TICK, 12, 13, 11> enc; // pins 11, 12, 13
 class PWMValidator
 {
     public:
-        static int validate(int pwm)
+        static unsigned char validate(int pwm)
         {
             if (pwm > MAX_PWM)
                 pwm = MAX_PWM;

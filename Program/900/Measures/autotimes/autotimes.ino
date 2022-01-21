@@ -73,22 +73,22 @@ struct MenuItem
 typedef void (*callback_t)();
 struct MenuItemsDef
 {
-    static const char topItemsLength = 6;
+    static const unsigned char topItemsLength = 6;
     static MenuItem topItems[topItemsLength];
 
-    static const char settingsItemsLength = 4;
+    static const unsigned char settingsItemsLength = 4;
     static MenuItem settingsItems[settingsItemsLength];
 
     static const callback_t handlers[1];
 };
 
 MenuItem MenuItemsDef::topItems[topItemsLength] = {
-    {"%Auto",       ""},
-    {"%Manual",     ""},
-    {"%Nonstop",    ""},
-    {"Video",       ""},
-    {"Rotate 90",   ""},
-    {"Settings",    ""}
+    {"%Auto",         ""},
+    {"%Manual",       ""},
+    {"%Nonstop",      ""},
+    {"Video",         ""},
+    {"Rotate 90\337", ""},
+    {"Settings",      ""}
 };
 MenuItem MenuItemsDef::settingsItems[settingsItemsLength] = {
     {"Steps",        ""},
@@ -171,7 +171,7 @@ unsigned char Settings::_acceleration;
 class Menu
 {
     public:
-        char current;
+        unsigned char current;
 
         void setItems(const MenuItem* items, unsigned char length)
         {
@@ -240,16 +240,14 @@ class Menu
 
         void next()
         {
-            current++;
-            if (current >= _length)
-                current = _length - 1;
+            if (current < _length - 1)
+            	current++;
         }
 
         void prev()
         {
-            current--;
-            if (current < 0)
-                current = 0;
+            if (current > 0)
+            	current--;
         }
 
     private:
@@ -270,25 +268,18 @@ class Menu
         String _recentTop;
         String _recentBottom;
 
-        void validateCurrent()
-        {
-            if (current < 0)
-                current = 0;
-            else
-            {
-                if (current >= _length)
-                    current = _length - 1;
-            }
-        }
-        
         void printTop(String text)
         {
             if (_recentTop != text)
             {
                 _recentTop = text;
-                text = fillWithSpaces(text);
                 lcd.setCursor(0, 0);
                 lcd.print(text);
+                // Clear rest of space
+                for (int i = text.length(); i <= 16; i++)
+                {
+                    lcd.print(' ');
+                }
             }
         }
 
@@ -297,21 +288,16 @@ class Menu
             if (_recentBottom != text)
             {
                 _recentBottom = text;
-                text = fillWithSpaces(text);
                 lcd.setCursor(0, 1);
                 lcd.print(text);
+                // Clear rest of space
+                for (int i = text.length(); i <= 16; i++)
+                {
+                    lcd.print(' ');
             }
         }
 
-        String fillWithSpaces(String text)
-        {
-            String result;
-            result.reserve(16);
-            result = text;
-            while (result.length() < 16)
-                result += " ";
 
-            return result;
         }
 };
 Menu menu;

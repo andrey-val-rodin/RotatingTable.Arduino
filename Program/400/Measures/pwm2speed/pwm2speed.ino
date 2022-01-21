@@ -24,7 +24,7 @@ EncButton<EB_TICK, 12, 13, 11> enc; // pins 11, 12, 13
 class PWMValidator
 {
     public:
-        static int validate(int pwm)
+        static unsigned char validate(int pwm)
         {
             if (pwm > MAX_PWM)
                 pwm = MAX_PWM;
@@ -353,11 +353,11 @@ class Mover
             switch (Settings::getAcceleration())
             {
                 case 10:
-                    return _graduations > 10 * DEGREE ? 16 : 12;
+                    return _graduations >= 10 * DEGREE ? 18 : 14;
                 case 9:
-                    return _graduations > 10 * DEGREE ? 10 : 8;
+                    return _graduations >= 10 * DEGREE ? 10 : 8;
                 case 8:
-                    return _graduations > 10 * DEGREE ? 6 : 4;
+                    return _graduations >= 10 * DEGREE ? 6 : 4;
                 case 7:
                     return 2;
                 default:
@@ -580,7 +580,7 @@ class Worker
                     Serial.println("15000 Гц");
                     SetPinFrequencySafe(MOTOR1, 15000);
                     SetPinFrequencySafe(MOTOR2, 15000);
-                    MIN_PWM = 60;
+                    MIN_PWM = 65;
                     break;
 
                 default:
