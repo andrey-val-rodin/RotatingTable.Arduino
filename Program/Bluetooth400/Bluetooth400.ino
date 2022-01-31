@@ -360,6 +360,8 @@ class Mover
             _currentPWM = MIN_PWM;
             _maxPWM = maxPWM;
             _cumulativePos -= encoder.readAndReset();
+            _acceleration = Settings::getAcceleration();
+            _realAcceleration = Settings::getRealAcceleration();
             _state = Move;
         }
 
@@ -372,6 +374,8 @@ class Mover
             _forward = pwm > 0;
             _currentPWM = MIN_PWM;
             _cumulativePos -= encoder.readAndReset();
+            _acceleration = Settings::getAcceleration();
+            _realAcceleration = Settings::getRealAcceleration();
             _state = RunAcc;
         }
 
@@ -387,7 +391,7 @@ class Mover
             if (_state == Run)
             {
                 // Calculate stop point
-                float decelerationLength = Settings::getRealAcceleration();
+                float decelerationLength = _realAcceleration;
                 float graduationsToStop = (_currentPWM - MIN_PWM) * decelerationLength /
                     (MAX_PWM - MIN_PWM);
                 if (!_forward)
@@ -481,6 +485,8 @@ class Mover
         int _currentPWM;
         unsigned long _timer;
         unsigned char _timePartCount;
+        int _acceleration;
+        int _realAcceleration;
         
         void tickMove()
         {
@@ -556,7 +562,7 @@ class Mover
             float x = _currentPos;
             if (!_forward)
                 x = -x;
-            float accelerationLength = Settings::getRealAcceleration();
+            float accelerationLength = _realAcceleration;
             float currentPWM = MIN_PWM + x * (MAX_PWM - MIN_PWM) / accelerationLength;
             _currentPWM = validatePWM(currentPWM);
         }
@@ -568,7 +574,7 @@ class Mover
             if (!_forward)
                 x = -x;
             x -= getFinalDistance();
-            float decelerationLength = Settings::getRealAcceleration();
+            float decelerationLength = _realAcceleration;
             float currentPWM = MIN_PWM + x * (MAX_PWM - MIN_PWM) / decelerationLength;
             _currentPWM = validatePWM(currentPWM);
         }
@@ -598,7 +604,7 @@ class Mover
         // This function returns length of this final distance
         int getFinalDistance()
         {
-            switch (Settings::getAcceleration())
+            switch (_acceleration)
             {
                 case 10:
                     return _graduations >= 10 * DEGREE ? 18 : 14;
@@ -1245,8 +1251,6 @@ class Listener
                     }
                     else if (command.startsWith("ACC"))
                     {
-Serial.write("ERR");
-return;
                         command.replace("ACC ", "");
                         uint16_t value = command.toInt();
                         if (Settings::checkAcceleration(value))
