@@ -690,7 +690,7 @@ class Runner
             return _mode;
         }
 
-        void Run(Mode mode)
+        void run(Mode mode)
         {
             _mode = mode;
         }
@@ -780,6 +780,7 @@ class Runner
             if (currentState == Beginning && millis() - _timer >= Settings::getExposure())
             {
                 _stepNumber++;
+                Serial.write(("STEP " + String(_stepNumber)).c_str());
                 digitalWrite(SHUTTER, CAMERA_HIGH); // make first photo
                 _timer = millis();
                 currentState = Exposure;
@@ -825,6 +826,7 @@ class Runner
             if (currentState == Delay && millis() - _timer >= Settings::getDelay())
             {
                 _stepNumber++;
+                Serial.write(("STEP " + String(_stepNumber)).c_str());
                 digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
                 _timer = millis();
                 currentState = Exposure;
@@ -1162,6 +1164,7 @@ class Runner
             _stepNumber = 0;
             digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
             digitalWrite(CAMERA, CAMERA_LOW); // release camera
+            Serial.write("END");
         }
 };
 Runner runner;
@@ -1169,26 +1172,27 @@ Runner runner;
 class Listener
 {
     public:
-        const String Status            = "STATUS";
-        const String GetSteps          = "GET STEPS";
-        const String GetAcceleration   = "GET ACC";
-        const String GetExposure       = "GET EXP";
-        const String GetDelay          = "GET DELAY";
-        const String SetAcceleration   = "SET ACC";
-        const String SetSteps          = "SET STEPS";
-        const String SetExposure       = "SET EXP";
-        const String SetDelay          = "SET DELAY";
-        const String GetPosition       = "GET POS";
-        const String GetMode           = "GET MODE";
-        const String IsRunning         = "IS RUNNING";
-        const String RunAutoMode       = "RUN AUTO";
-        const String RunManualMode     = "RUN MANUAL";
-        const String RunNonStopMode    = "RUN NS";
-        const String RunVideoMode      = "RUN VIDEO";
-        const String RunRotateMode     = "RUN ROTATE";
-        const String Shutter           = "SHUTTER";
-        const String Next              = "NEXT";
-        const String Stop              = "STOP";
+        const String Status           = "STATUS";
+        const String GetSteps         = "GET STEPS";
+        const String GetAcceleration  = "GET ACC";
+        const String GetExposure      = "GET EXP";
+        const String GetDelay         = "GET DELAY";
+        const String SetAcceleration  = "SET ACC";
+        const String SetSteps         = "SET STEPS";
+        const String SetExposure      = "SET EXP";
+        const String SetDelay         = "SET DELAY";
+        const String GetPosition      = "GET POS";
+        const String GetMode          = "GET MODE";
+        const String IsRunning        = "IS RUNNING"; //TODO remove?
+        const String RunAutoMode      = "RUN AUTO";
+        const String RunManualMode    = "RUN MANUAL";
+        const String RunNonStopMode   = "RUN NS";
+        const String RunVideoMode     = "RUN VIDEO";
+        const String RunRotateMode    = "RUN ROTATE";
+        const String RunFreeMovement  = "RUN FM";
+        const String Shutter          = "SHUTTER";
+        const String Next             = "NEXT";
+        const String Stop             = "STOP";
 
         void tick()
         {
@@ -1197,7 +1201,10 @@ class Listener
                 String command = Serial.readString();
                 if (command == Status)
                 {
-                    Serial.write("READY");
+                    if (runner.isRunning())
+                        Serial.write("RUNNING");
+                    else
+                        Serial.write("READY");
                 }
                 else if (command.startsWith("GET "))
                 {
@@ -1291,7 +1298,9 @@ class Listener
                 }
                 else if (command == RunAutoMode)
                 {
-                    runner.Run(Runner::Auto);
+                    Serial.write("OK");
+                    delay(100); // ?
+                    runner.run(Runner::Auto);
                 }
                 else if (command == RunManualMode)
                 {
@@ -1304,6 +1313,10 @@ class Listener
                 }
                 else if (command == RunRotateMode)
                 {
+                }
+                else if (RunFreeMovement == "RUN FM")
+                {
+                    Serial.write("OK");
                 }
                 else if (command == Shutter)
                 {
