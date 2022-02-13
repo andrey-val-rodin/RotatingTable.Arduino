@@ -686,6 +686,11 @@ class Runner
             return _isRunning;
         }
 
+        inline bool isBusy()
+        {
+            return _isBusy;
+        }
+
         inline Mode getMode()
         {
             return _mode;
@@ -743,12 +748,15 @@ class Runner
         int16_t _stepNumber = 0;
         unsigned long _timer = 0;
         bool _isRunning = false;
+        bool _isBusy = false;
         bool _stop = false;
         State _currentState;
         int32_t _lastGraduations;
         bool _needToMove;
         int _nextSnapshotPos;
         bool _needToStoreNewPWM;
+        int _currentAngle;
+        int _oldAngle;
 
         void runAutomatic()
         {
@@ -774,7 +782,7 @@ class Runner
                 // Starting
                 _stepNumber = 0;
                 digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
-                _isRunning = true;
+                _isRunning = _isBusy = true;
                 _lastGraduations = 0;
                 mover.resetAbsolutePos();
                 _timer = millis();
@@ -863,7 +871,7 @@ class Runner
                 _stepNumber = 1;
                 _needToMove = false;
                 digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
-                _isRunning = true;
+                _isRunning = _isBusy = true;
                 _lastGraduations = 0;
                 mover.resetAbsolutePos();
                 _timer = millis();
@@ -983,7 +991,7 @@ class Runner
                 // Starting
                 _stepNumber = 0;
                 digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
-                _isRunning = true;
+                _isRunning = _isBusy = true;
                 _needToStoreNewPWM = false;
                 _timer = millis();
                 _currentState = Beginning;
@@ -1053,7 +1061,7 @@ class Runner
             if (!_isRunning)
             {
                 mover.run(Settings::getVideoPWM());
-                _isRunning = true;
+                _isRunning = _isBusy = true;
                 return;
             }
 
@@ -1109,6 +1117,7 @@ class Runner
 
         void runRotate()
         {
+          /*
             if (!_isRunning)
             {
         #ifdef DEBUG_MODE
@@ -1128,7 +1137,7 @@ class Runner
             {
                 return;
             }
-            /*
+
             if (enc.turn() && _currentState == Waiting)
             {
                 if (enc.left())
@@ -1144,7 +1153,7 @@ class Runner
 
                 return;
             }
-            */
+
             if (_currentState == Move)
             {
         #ifdef DEBUG_MODE
@@ -1153,15 +1162,13 @@ class Runner
         #endif
                 _currentState = Waiting;
             }
+            */
         }
 
         void runFreeMovement()
         {
             if (!_isRunning)
             {
-        #ifdef DEBUG_MODE
-                mover.resetAbsolutePos();
-        #endif
                 _currentState = Waiting;
                 _isRunning = true;
             }
@@ -1172,19 +1179,35 @@ class Runner
                 return;
             }
 
-            if (!mover.isStopped())
+            if (mover.isStopped())
             {
-                return;
+                if (_isBusy)
+                {
+                    Serial.write("END");
+                    _isBusy = false;
+                }
+            }
+            else
+            {
+                _isBusy = true;
+                _currentAngle = mover.getCurrentPos() / DEGREE;
+//                if (_currentAngle != _oldAngle)
+                if (abs(_currentAngle - _oldAngle) >= 10) // TODO temporary
+                {
+                    _oldAngle = _currentAngle;
+                    Serial.write(("POS " + String(_currentAngle)).c_str());
+                }
             }
         }
 
         void finalize()
         {
-            _isRunning = false;
+            _isRunning = _isBusy = false;
             _stop = false;
             _mode = None;
             mover.stop();
             _stepNumber = 0;
+            _currentAngle = _oldAngle = 0;
             digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
             digitalWrite(CAMERA, CAMERA_LOW); // release camera
             Serial.write("END");
@@ -1341,7 +1364,7 @@ class Listener
                 else if (command == RunAutoMode)
                 {
                     Serial.write("OK");
-                    delay(100); // ?
+                    delay(100); // TODO TODO temporary
                     runner.run(Runner::Auto);
                 }
                 else if (command == RunManualMode)
@@ -1386,6 +1409,7 @@ void setup()
     SetPinFrequencySafe(MOTOR2, 15000);
 
     Serial.begin(9600);
+    Serial.setTimeout(100); //TODO!!!!!!!!!!!!!!!!!!!!
 }
 
 void loop()
