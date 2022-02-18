@@ -74,7 +74,6 @@ class Runner
         };
         
         static void finalize();
-        static void incrementStep();
         static void display(String top, String stepName);
 };
 Runner runner;

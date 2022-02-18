@@ -27,7 +27,6 @@ Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 EncButton<EB_TICK, 12, 13, 11> enc; // pins 11, 12, 13
-EncButton<EB_TICK, 8> startButton;  // pin 8
 EncButton<EB_TICK, 7> photoButton;  // pin 7
 EncButton<EB_TICK, 4> nextButton;   // pin 4
 
@@ -53,13 +52,6 @@ signed char FindInSteps(uint16_t numberOfSteps)
     return -1;
 }
 
-bool startPressed()
-{
-    bool encPressed = enc.press();
-    bool startBtnPressed = startButton.press();
-    return encPressed || startBtnPressed;    
-}
-
 class Runner
 {
     public:
@@ -82,7 +74,6 @@ class Runner
         };
         
         static void finalize();
-        static void incrementStep();
         static void display(String top, String stepName);
 };
 Runner runner;
@@ -957,7 +948,7 @@ class Selector
             
             menu.display();
             
-            if (startPressed())
+            if (enc.press())
                 press();
             else if (enc.turn())
             {
@@ -1028,7 +1019,7 @@ void Runner::runAutomatic()
     static int total = 0;
 #endif
     
-    if (startPressed())
+    if (enc.press())
     {
         finalize();
         return;
@@ -1122,7 +1113,7 @@ void Runner::runManual()
     static int total = 0;
 #endif
     
-    if (startPressed())
+    if (enc.press())
     {
         finalize();
         return;
@@ -1167,7 +1158,7 @@ void Runner::runManual()
             lastGraduations = stepGraduations + error;
             mover.move(lastGraduations);
         }
-	
+
         return;
     }
 
@@ -1219,7 +1210,7 @@ void Runner::runNonstop()
     static int total = 0;
 #endif
 
-    if (startPressed())
+    if (enc.press())
     {
         finalize();
         return;
@@ -1343,7 +1334,7 @@ void Runner::runVideo()
     }
     
     char direction = mover.isForward() ? 1 : -1;
-    if (startPressed())
+    if (enc.press())
     {
         if (mover.getState() == mover.State::Run)
         {
@@ -1398,7 +1389,7 @@ void Runner::runRotate()
         isRunning = true;
     }
     
-    if (startPressed())
+    if (enc.press())
     {
         finalize();
         return;
@@ -1470,7 +1461,6 @@ void setup()
     lcd.backlight();
 
     enc.setButtonLevel(HIGH);
-    startButton.setButtonLevel(HIGH);
     photoButton.setButtonLevel(HIGH);
     nextButton.setButtonLevel(HIGH);
 
@@ -1485,7 +1475,6 @@ void setup()
 void loop()
 {
     enc.tick();
-    startButton.tick();
     photoButton.tick();
     nextButton.tick();
     selector.tick();
