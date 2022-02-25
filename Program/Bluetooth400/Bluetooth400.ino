@@ -708,6 +708,12 @@ class Runner
             _mode = mode;
         }
 
+        void rotate(int pos)
+        {
+            _currentState = Beginning;
+            mover.move(pos);
+        }
+
         void tick()
         {
             switch (_mode)
@@ -789,7 +795,7 @@ class Runner
                 // Starting
                 _stepNumber = 0;
                 digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
-                _isRunning = _isBusy = true;
+                _isRunning = true;
                 _lastGraduations = 0;
                 mover.resetAbsolutePos();
                 _timer = millis();
@@ -872,13 +878,13 @@ class Runner
 
             int16_t stepCount = Settings::getSteps();
             int stepGraduations = GRADUATIONS / stepCount;
-            if (!_isRunning)
+            if (!_isBusy)
             {
                 // Starting
                 _stepNumber = 1;
                 _needToMove = false;
                 digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
-                _isRunning = _isBusy = true;
+                _isBusy = true;
                 _lastGraduations = 0;
                 mover.resetAbsolutePos();
                 _timer = millis();
@@ -998,7 +1004,7 @@ class Runner
                 // Starting
                 _stepNumber = 0;
                 digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
-                _isRunning = _isBusy = true;
+                _isRunning = true;
                 _needToStoreNewPWM = false;
                 _timer = millis();
                 _currentState = Beginning;
@@ -1065,10 +1071,10 @@ class Runner
 
         void runVideo()
         {
-            if (!_isRunning)
+            if (!_isBusy)
             {
                 mover.run(Settings::getVideoPWM());
-                _isRunning = _isBusy = true;
+                _isBusy = true;
                 return;
             }
 
@@ -1174,10 +1180,10 @@ class Runner
 
         void runFreeMovement()
         {
-            if (!_isRunning)
+            if (!_isBusy)
             {
                 _currentState = Waiting;
-                _isRunning = true;
+                _isBusy = true;
             }
             
             if (_stop)
@@ -1186,17 +1192,13 @@ class Runner
                 return;
             }
 
-            if (mover.isStopped())
+            if (_currentState == Beginning && mover.isStopped())
             {
-                if (_isBusy)
-                {
-                    Write("END");
-                    _isBusy = false;
-                }
+                Write("END");
+                _currentState = Waiting;
             }
             else
             {
-                _isBusy = true;
                 _currentAngle = mover.getCurrentPos() / DEGREE;
                 if (_currentAngle != _oldAngle)
 //                if (abs(_currentAngle - _oldAngle) >= 10) // TODO temporary
@@ -1256,6 +1258,8 @@ class Listener
                 {
                     if (runner.isRunning())
                         Write("RUNNING");
+                    else if (runner.isBusy())
+                        Write("BUSY");
                     else
                         Write("READY");
                 }
@@ -1353,7 +1357,7 @@ class Listener
                 }
                 else if (command.startsWith("FM "))
                 {
-                    if (!runner.isRunning() || runner.getMode() != Runner::FreeMovement)
+                    if (!runner.isBusy() || runner.getMode() != Runner::FreeMovement)
                     {
                         Write("ERR");
                     }
@@ -1361,7 +1365,7 @@ class Listener
                     {
                         command.replace("FM ", "");
                         int value = command.toInt();
-                        mover.move(value * DEGREE);
+                        runner.rotate(value * DEGREE);
                         Write("OK");
                     }
                 }
@@ -1394,6 +1398,7 @@ class Listener
                 else if (command == Stop)
                 {
                     runner.stop();
+                    Write("OK");
                 }
             }
         }
