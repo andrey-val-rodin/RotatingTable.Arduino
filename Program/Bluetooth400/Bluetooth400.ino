@@ -41,6 +41,13 @@ signed char FindInSteps(uint16_t numberOfSteps)
     return -1;
 }
 
+const char terminator = '\n';
+void Write(String text)
+{
+    String output = text + terminator;
+    Serial.write(output.c_str());
+}
+            
 class PWMValidator
 {
     public:
@@ -796,7 +803,7 @@ class Runner
             if (_currentState == Beginning && millis() - _timer >= Settings::getExposure())
             {
                 _stepNumber++;
-                Serial.write(("STEP " + String(_stepNumber)).c_str());
+                Write(("STEP " + String(_stepNumber)).c_str());
                 digitalWrite(SHUTTER, CAMERA_HIGH); // make first photo
                 _timer = millis();
                 _currentState = Exposure;
@@ -842,7 +849,7 @@ class Runner
             if (_currentState == Delay && millis() - _timer >= Settings::getDelay())
             {
                 _stepNumber++;
-                Serial.write(("STEP " + String(_stepNumber)).c_str());
+                Write(("STEP " + String(_stepNumber)).c_str());
                 digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
                 _timer = millis();
                 _currentState = Exposure;
@@ -1183,7 +1190,7 @@ class Runner
             {
                 if (_isBusy)
                 {
-                    Serial.write("END");
+                    Write("END");
                     _isBusy = false;
                 }
             }
@@ -1191,11 +1198,11 @@ class Runner
             {
                 _isBusy = true;
                 _currentAngle = mover.getCurrentPos() / DEGREE;
-//                if (_currentAngle != _oldAngle)
-                if (abs(_currentAngle - _oldAngle) >= 10) // TODO temporary
+                if (_currentAngle != _oldAngle)
+//                if (abs(_currentAngle - _oldAngle) >= 10) // TODO temporary
                 {
                     _oldAngle = _currentAngle;
-                    Serial.write(("POS " + String(_currentAngle)).c_str());
+                    Write(("POS " + String(_currentAngle)).c_str());
                 }
             }
         }
@@ -1210,7 +1217,7 @@ class Runner
             _currentAngle = _oldAngle = 0;
             digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
             digitalWrite(CAMERA, CAMERA_LOW); // release camera
-            Serial.write("END");
+            Write("END");
         }
 };
 Runner runner;
@@ -1242,34 +1249,34 @@ class Listener
 
         void tick()
         {
-            if (Serial.available())
+           if (Serial.available())
             {
-                String command = Serial.readString();
+                String command = Serial.readStringUntil(terminator);
                 if (command == Status)
                 {
                     if (runner.isRunning())
-                        Serial.write("RUNNING");
+                        Write("RUNNING");
                     else
-                        Serial.write("READY");
+                        Write("READY");
                 }
                 else if (command.startsWith("GET "))
                 {
                     command.replace("GET ", "");
                     if (command == "STEPS")
                     {
-                        Serial.write(String(Settings::getSteps()).c_str());
+                        Write(String(Settings::getSteps()).c_str());
                     }
                     else if (command == "ACC")
                     {
-                        Serial.write(String(Settings::getAcceleration()).c_str());
+                        Write(String(Settings::getAcceleration()).c_str());
                     }
                     else if (command == "EXP")
                     {
-                        Serial.write(String(Settings::getExposure()).c_str());
+                        Write(String(Settings::getExposure()).c_str());
                     }
                     else if (command == "DELAY")
                     {
-                        Serial.write(String(Settings::getDelay()).c_str());
+                        Write(String(Settings::getDelay()).c_str());
                     }
                     else if (command == "POS")
                     {
@@ -1277,7 +1284,7 @@ class Listener
                     }
                     else if (command == "MODE")
                     {
-                        Serial.write(String(runner.getMode()).c_str());
+                        Write(String(runner.getMode()).c_str());
                     }
                 }
                 else if (command.startsWith("SET "))
@@ -1287,7 +1294,7 @@ class Listener
                     {
                         if (runner.getMode() != Runner::None)
                         {
-                            Serial.write("ERR");
+                            Write("ERR");
                         }
                         else
                         {
@@ -1296,10 +1303,10 @@ class Listener
                             if (Settings::checkSteps(value))
                             {
                                 Settings::setSteps(value);
-                                Serial.write("OK");
+                                Write("OK");
                             }
                             else
-                                Serial.write("ERR");
+                                Write("ERR");
                         }
                     }
                     else if (command.startsWith("ACC"))
@@ -1309,10 +1316,10 @@ class Listener
                         if (Settings::checkAcceleration(value))
                         {
                             Settings::setAcceleration(value);
-                            Serial.write("OK");
+                            Write("OK");
                         }
                         else
-                            Serial.write("ERR");
+                            Write("ERR");
                     }
                     else if (command.startsWith("EXP"))
                     {
@@ -1321,10 +1328,10 @@ class Listener
                         if (Settings::checkExposure(value))
                         {
                             Settings::setExposure(value);
-                            Serial.write("OK");
+                            Write("OK");
                         }
                         else
-                            Serial.write("ERR");
+                            Write("ERR");
                     }
                     else if (command.startsWith("DELAY"))
                     {
@@ -1333,29 +1340,29 @@ class Listener
                         if (Settings::checkDelay(value))
                         {
                             Settings::setDelay(value);
-                            Serial.write("OK");
+                            Write("OK");
                         }
                         else
-                            Serial.write("ERR");
+                            Write("ERR");
                     }
                 }
                 else if (command == RunFreeMovement)
                 {
                     runner.run(Runner::FreeMovement);
-                    Serial.write("OK");
+                    Write("OK");
                 }
                 else if (command.startsWith("FM "))
                 {
                     if (!runner.isRunning() || runner.getMode() != Runner::FreeMovement)
                     {
-                        Serial.write("ERR");
+                        Write("ERR");
                     }
                     else
                     {
                         command.replace("FM ", "");
                         int value = command.toInt();
                         mover.move(value * DEGREE);
-                        Serial.write("OK");
+                        Write("OK");
                     }
                 }
                 else if (command == IsRunning)
@@ -1363,8 +1370,7 @@ class Listener
                 }
                 else if (command == RunAutoMode)
                 {
-                    Serial.write("OK");
-                    delay(100); // TODO TODO temporary
+                    Write("OK");
                     runner.run(Runner::Auto);
                 }
                 else if (command == RunManualMode)
@@ -1408,8 +1414,8 @@ void setup()
     SetPinFrequencySafe(MOTOR1, 15000);
     SetPinFrequencySafe(MOTOR2, 15000);
 
-    Serial.begin(9600);
-    Serial.setTimeout(100); //TODO!!!!!!!!!!!!!!!!!!!!
+    Serial.begin(115200);
+    Serial.setTimeout(10);
 }
 
 void loop()
