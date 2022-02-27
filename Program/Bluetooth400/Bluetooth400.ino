@@ -10,7 +10,7 @@
 #define SHUTTER 6
 #define CAMERA_LOW HIGH
 #define CAMERA_HIGH LOW
-#define MIN_PWM 65
+#define MIN_PWM 60
 #define MAX_PWM 255
 #define GRADUATIONS 4320 // number of graduations per turn
 #define DEGREE (GRADUATIONS / 360)
@@ -806,10 +806,10 @@ class Runner
                 return;
             }
 
-            if (_currentState == Beginning && millis() - _timer >= Settings::getExposure())
+            if (_currentState == Beginning && millis() - _timer >= 10) // 10 ms is a time for preparing camera
             {
                 _stepNumber++;
-                Write(("STEP " + String(_stepNumber)).c_str());
+                Write("STEP " + String(_stepNumber));
                 digitalWrite(SHUTTER, CAMERA_HIGH); // make first photo
                 _timer = millis();
                 _currentState = Exposure;
@@ -855,7 +855,7 @@ class Runner
             if (_currentState == Delay && millis() - _timer >= Settings::getDelay())
             {
                 _stepNumber++;
-                Write(("STEP " + String(_stepNumber)).c_str());
+                Write("STEP " + String(_stepNumber));
                 digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
                 _timer = millis();
                 _currentState = Exposure;
@@ -1204,7 +1204,7 @@ class Runner
 //                if (abs(_currentAngle - _oldAngle) >= 10) // TODO temporary
                 {
                     _oldAngle = _currentAngle;
-                    Write(("POS " + String(_currentAngle)).c_str());
+                    Write("POS " + String(_currentAngle));
                 }
             }
         }
@@ -1268,19 +1268,19 @@ class Listener
                     command.replace("GET ", "");
                     if (command == "STEPS")
                     {
-                        Write(String(Settings::getSteps()).c_str());
+                        Write(String(Settings::getSteps()));
                     }
                     else if (command == "ACC")
                     {
-                        Write(String(Settings::getAcceleration()).c_str());
+                        Write(String(Settings::getAcceleration()));
                     }
                     else if (command == "EXP")
                     {
-                        Write(String(Settings::getExposure()).c_str());
+                        Write(String(Settings::getExposure()));
                     }
                     else if (command == "DELAY")
                     {
-                        Write(String(Settings::getDelay()).c_str());
+                        Write(String(Settings::getDelay()));
                     }
                     else if (command == "POS")
                     {
@@ -1288,7 +1288,7 @@ class Listener
                     }
                     else if (command == "MODE")
                     {
-                        Write(String(runner.getMode()).c_str());
+                        Write(String(runner.getMode()));
                     }
                 }
                 else if (command.startsWith("SET "))
@@ -1352,8 +1352,8 @@ class Listener
                 }
                 else if (command == RunFreeMovement)
                 {
-                    runner.run(Runner::FreeMovement);
                     Write("OK");
+                    runner.run(Runner::FreeMovement);
                 }
                 else if (command.startsWith("FM "))
                 {

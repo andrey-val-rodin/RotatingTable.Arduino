@@ -15,7 +15,7 @@
 #define SHUTTER 6
 #define CAMERA_LOW HIGH
 #define CAMERA_HIGH LOW
-#define MIN_PWM 65
+#define MIN_PWM 60
 #define MAX_PWM 255
 #define GRADUATIONS 4320 // number of graduations per turn
 #define DEGREE (GRADUATIONS / 360)
