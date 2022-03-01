@@ -468,6 +468,13 @@ class Mover
             return -pos;
         }
 
+        // Returns latest position obtained by Mover class.
+        // This function is "easy" and does not use encoder and therefore critical section. 
+        inline int32_t getLatestPos()
+        {
+            return _currentPos;
+        }
+
         // Returns graduation count passed from starting point. Can be negative
         int32_t getAbsolutePos()
         {
@@ -786,7 +793,15 @@ class Runner
             }
 
             if (!mover.isStopped())
+            {
+                _currentAngle = mover.getLatestPos() / DEGREE;
+                if (_currentAngle != _oldAngle)
+                {
+                    _oldAngle = _currentAngle;
+                    Write("POS " + String(_currentAngle));
+                }
                 return;
+            }
 
             int16_t stepCount = Settings::getSteps();
             int16_t stepGraduations = GRADUATIONS / stepCount;
@@ -1199,7 +1214,7 @@ class Runner
             }
             else
             {
-                _currentAngle = mover.getCurrentPos() / DEGREE;
+                _currentAngle = mover.getLatestPos() / DEGREE;
                 if (_currentAngle != _oldAngle)
 //                if (abs(_currentAngle - _oldAngle) >= 10) // TODO temporary
                 {
@@ -1307,7 +1322,8 @@ class Listener
                             if (Settings::checkSteps(value))
                             {
                                 Settings::setSteps(value);
-                                Write("OK");
+                                // Check whether the value was successfully stored in EEPROM
+                                Write(Settings::getSteps() == value? "OK" : "ERR");
                             }
                             else
                                 Write("ERR");
@@ -1320,7 +1336,8 @@ class Listener
                         if (Settings::checkAcceleration(value))
                         {
                             Settings::setAcceleration(value);
-                            Write("OK");
+                            // Check whether the value was successfully stored in EEPROM
+                            Write(Settings::getAcceleration() == value? "OK" : "ERR");
                         }
                         else
                             Write("ERR");
@@ -1332,7 +1349,8 @@ class Listener
                         if (Settings::checkExposure(value))
                         {
                             Settings::setExposure(value);
-                            Write("OK");
+                            // Check whether the value was successfully stored in EEPROM
+                            Write(Settings::getExposure() == value? "OK" : "ERR");
                         }
                         else
                             Write("ERR");
@@ -1344,7 +1362,8 @@ class Listener
                         if (Settings::checkDelay(value))
                         {
                             Settings::setDelay(value);
-                            Write("OK");
+                            // Check whether the value was successfully stored in EEPROM
+                            Write(Settings::getDelay() == value? "OK" : "ERR");
                         }
                         else
                             Write("ERR");
