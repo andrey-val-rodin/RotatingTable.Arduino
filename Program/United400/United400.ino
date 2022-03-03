@@ -1295,6 +1295,8 @@ void Runner::runManual()
         // Starting
         _stepNumber = 1;
         _needToMove = false;
+        if (!UseBluetooth)
+            display(mode, stepName);
         digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
         _isBusy = true;
         _lastGraduations = 0;
@@ -1498,7 +1500,7 @@ void Runner::runVideo()
         if (!UseBluetooth)
             selector.menu.display("Video...", "");
         mover.run(Settings::getVideoPWM());
-        _isBusy = true;
+        _isRunning = true;
         return;
     }
 
@@ -1509,7 +1511,7 @@ void Runner::runVideo()
     }
     
     char direction = mover.isForward() ? 1 : -1;
-    if (isStopping())
+    if (enc.press())
     {
         if (mover.getState() == mover.State::Run)
         {
@@ -1552,10 +1554,12 @@ void Runner::runVideo()
 
 void Runner::runRotate()
 {
+    if (UseBluetooth)
+        return; // Mobile app doesn't use this mode
+	
     if (!_isRunning)
     {
-        if (!UseBluetooth)
-            selector.menu.display("Rotation...", "<-  90\337  ->");
+        selector.menu.display("Rotation...", "<-  90\337  ->");
 #ifdef DEBUG_MODE
         mover.resetAbsolutePos();
 #endif
@@ -1563,7 +1567,7 @@ void Runner::runRotate()
         _isRunning = true;
     }
     
-    if (isStopping)
+    if (enc.press())
     {
         finalize();
         return;
