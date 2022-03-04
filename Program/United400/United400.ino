@@ -54,11 +54,12 @@ signed char FindInSteps(uint16_t numberOfSteps)
     return -1;
 }
 
+char strBuf[30];
 const char terminator = '\n';
-void Write(String text)
+void Write(const String& text)
 {
-    String output = text + terminator;
-    Serial.write(output.c_str());
+    sprintf(strBuf, "%s%c", text.c_str(), terminator);
+    Serial.write(strBuf);
 }
 
 class Runner
@@ -85,7 +86,11 @@ class Runner
         static void runFreeMovement();
 
         static void stop();
-        static bool isStopping();
+        static inline bool isStopping();
+        static inline bool isIncreasePWM();
+        static inline bool isDecreasePWM();
+        static inline bool isChangingPWM();
+        static int setChangingPWM(int value);
         static inline bool isRunning();
         static inline bool isBusy();
         static inline Mode getMode();
@@ -116,9 +121,11 @@ class Runner
         static bool _needToStoreNewPWM;
         static int _currentAngle;
         static int _oldAngle;
+        static int _changePWM;
     
         static void finalize();
-        static void display(String top, String stepName);
+        static char* format(char* format, int arg);
+        static void display(const String& top, const String& stepName);
 };
 
 struct MenuItem
@@ -479,39 +486,38 @@ class Menu
 
         void display()
         {
-            String top;
+            char* top;
             unsigned char index = (unsigned char) current;
             switch (_mode)
             {
                 case MenuItems:
-                    top = _items[index].top;
-                    if (top.startsWith("%"))
+                    top = _items[index].top.c_str();
+                    if (top[0] = '%')
                         top = formatSteps(top);
                     printTop(top);
                     printBottom(_items[index].bottom);
                     break;
 
                 case Array:
-                    printTop(String(_array[index], DEC));
+                    printTop(String(_array[index]).c_str());
                     printBottom("");
                     break;
                 
                 case Range:
-                    printTop(String((current + _offset) * _multiplier, DEC));
+                    printTop(String((current + _offset) * _multiplier).c_str());
                     printBottom("");
                     break;
             }
         }
 
-        String formatSteps(String top)
+        char* formatSteps(char* top)
         {
-            top.remove(0, 1); // remove % sign
-            char strBuf[20];
-            sprintf(strBuf, "%s (%d)", top.c_str(), Settings::getSteps());
+            char* text = top + 1; // skip % sign
+            sprintf(strBuf, "%s (%d)", text, Settings::getSteps());
             return strBuf;
         }
         
-        void display(String top, String bottom)
+        void display(const String& top, const String& bottom)
         {
             printTop(top);
             printBottom(bottom);
@@ -547,7 +553,7 @@ class Menu
         String _recentTop;
         String _recentBottom;
 
-        void printTop(String text)
+        void printTop(const String& text)
         {
             if (_recentTop != text)
             {
@@ -563,7 +569,7 @@ class Menu
             }
         }
 
-        void printBottom(String text)
+        void printBottom(const String& text)
         {
             if (_recentBottom != text)
             {
@@ -1095,15 +1101,36 @@ int Runner::_nextSnapshotPos;
 bool Runner::_needToStoreNewPWM;
 int Runner::_currentAngle;
 int Runner::_oldAngle;
-        
+int Runner::_changePWM = 0;
+
 void Runner::stop()
 {
     _stop = true;
 }
 
-bool Runner::isStopping()
+inline bool Runner::isStopping()
 {
-    return UseBluetooth ? _stop : enc.press();
+    return _stop;//    return UseBluetooth? _stop : enc.press();
+}
+
+inline bool Runner::isIncreasePWM()
+{
+    return _changePWM > 0;//    return UseBluetooth? _changePWM > 0 : enc.right();
+}
+
+inline bool Runner::isDecreasePWM()
+{
+    return _changePWM < 0;//    return UseBluetooth? _changePWM < 0 : enc.left();
+}
+
+inline bool Runner::isChangingPWM()
+{
+    return _changePWM != 0;//    return UseBluetooth? _changePWM != 0 : enc.turn();
+}
+
+int Runner::setChangingPWM(int value)
+{
+    _changePWM = value;
 }
 
 inline bool Runner::isRunning()
@@ -1215,7 +1242,7 @@ void Runner::runAutomatic()
     {
         _stepNumber++;
         if (UseBluetooth)
-            Write("STEP " + String(_stepNumber));
+            Write(format("STEP %d", _stepNumber));
         else
             display(mode, stepName);
         digitalWrite(SHUTTER, CAMERA_HIGH); // make first photo
@@ -1264,7 +1291,7 @@ void Runner::runAutomatic()
     {
         _stepNumber++;
         if (UseBluetooth)
-            Write("STEP " + String(_stepNumber));
+            Write(format("STEP %d", _stepNumber));
         else
             display(mode, stepName);
 	    
@@ -1356,7 +1383,7 @@ void Runner::runManual()
             _currentState = Waiting;
             _stepNumber++;
             if (UseBluetooth)
-                Write("STEP " + String(_stepNumber));
+                Write(format("STEP %d", _stepNumber));
             else
                 display(mode, stepName);
         }
@@ -1435,7 +1462,7 @@ void Runner::runNonstop()
     {
         _stepNumber++;
         if (UseBluetooth)
-            Write("STEP " + String(_stepNumber));
+            Write(format("STEP %d", _stepNumber));
         else
             display(mode, stepName);
         digitalWrite(SHUTTER, CAMERA_HIGH); // make first photo
@@ -1464,7 +1491,7 @@ void Runner::runNonstop()
         else
         {
             if (UseBluetooth)
-                Write("STEP " + String(_stepNumber));
+                Write(format("STEP %d", _stepNumber));
             else
                 display(mode, stepName);
             digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
@@ -1511,7 +1538,7 @@ void Runner::runVideo()
     }
     
     char direction = mover.isForward() ? 1 : -1;
-    if (enc.press())
+    if (isStopping())
     {
         if (mover.getState() == mover.State::Run)
         {
@@ -1523,9 +1550,18 @@ void Runner::runVideo()
             mover.stop();
         }
     }
-    else if (enc.turn() && mover.getState() == mover.State::Run)
+    else if (UseBluetooth && mover.getState() == mover.State::Run)
     {
-        if (enc.left())
+        _currentAngle = mover.getCurrentPos() / DEGREE;
+        if (_currentAngle != _oldAngle)
+        {
+            _oldAngle = _currentAngle;
+            Write("POS " + String(_currentAngle));
+        }
+    }
+    else if (isChangingPWM() && mover.getState() == mover.State::Run)
+    {
+        if (isDecreasePWM())
         {
             if (direction > 0 && mover.getCurrentPWM() <= MIN_PWM)
             {
@@ -1537,7 +1573,7 @@ void Runner::runVideo()
 
             mover.changePWM(-delta * direction);
         }
-        else if (enc.right())
+        else if (isIncreasePWM())
         {
             if (direction < 0 && mover.getCurrentPWM() <= MIN_PWM)
             {
@@ -1612,7 +1648,7 @@ void Runner::runFreeMovement()
         _isBusy = true;
     }
     
-    if (_stop)
+    if (isStopping())
     {
         finalize();
         return;
@@ -1630,7 +1666,7 @@ void Runner::runFreeMovement()
 //                if (abs(_currentAngle - _oldAngle) >= 10) // TODO temporary
         {
             _oldAngle = _currentAngle;
-            Write("POS " + String(_currentAngle));
+            Write(format("POS %d", _currentAngle));
         }
     }
 }
@@ -1643,6 +1679,7 @@ void Runner::finalize()
     mover.stop();
     _stepNumber = 0;
     _currentAngle = _oldAngle = 0;
+    _changePWM = 0;
     digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
     digitalWrite(CAMERA, CAMERA_LOW); // release camera
     if (UseBluetooth)
@@ -1654,9 +1691,14 @@ void Runner::finalize()
     }
 }
 
-void Runner::display(String top, String stepName)
+char* Runner::format(char* format, int arg)
 {
-    char strBuf[20];
+    sprintf(strBuf, format, arg);
+    return strBuf;
+}
+
+void Runner::display(const String& top, const String& stepName)
+{
     sprintf(strBuf, "%s %d (%d)", stepName.c_str(), _stepNumber, Settings::getSteps());
     selector.menu.display(top, strBuf);
 }
@@ -1685,6 +1727,8 @@ class Listener
         const String Shutter          = "SHUTTER";
         const String Next             = "NEXT";
         const String Stop             = "STOP";
+        const String IncreasePWM      = "INCPWM";
+        const String DecreasePWM      = "DECPWM";
 
         void tick()
         {
@@ -1826,6 +1870,8 @@ class Listener
                 }
                 else if (command == RunVideoMode)
                 {
+                    Write("OK");
+                    Runner::run(Runner::Video);
                 }
                 else if (command == RunRotateMode)
                 {
@@ -1839,6 +1885,16 @@ class Listener
                 else if (command == Stop)
                 {
                     Runner::stop();
+                    Write("OK");
+                }
+                else if (command == IncreasePWM)
+                {
+                    Runner::setChangingPWM(1);
+                    Write("OK");
+                }
+                else if (command == DecreasePWM)
+                {
+                    Runner::setChangingPWM(-1);
                     Write("OK");
                 }
             }
