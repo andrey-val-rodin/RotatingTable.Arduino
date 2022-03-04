@@ -929,7 +929,7 @@ void Runner::runAutomatic()
             if (_currentAngle != _oldAngle)
             {
                 _oldAngle = _currentAngle;
-                Write("POS " + String(_currentAngle));
+                Write(format("POS %d", _currentAngle));
             }
         }
         return;
@@ -1266,43 +1266,47 @@ void Runner::runVideo()
             mover.stop();
         }
     }
-    else if (UseBluetooth && mover.getState() == mover.State::Run)
+    else if (mover.getState() == mover.State::Run)
     {
-        _currentAngle = mover.getCurrentPos() / DEGREE;
-        if (_currentAngle != _oldAngle)
+        if (UseBluetooth)
         {
-            _oldAngle = _currentAngle;
-            Write("POS " + String(_currentAngle));
-        }
-    }
-    else if (isChangingPWM() && mover.getState() == mover.State::Run)
-    {
-        if (isDecreasePWM())
-        {
-            if (direction > 0 && mover.getCurrentPWM() <= MIN_PWM)
+            _currentAngle = mover.getCurrentPos() / DEGREE;
+            if (_currentAngle != _oldAngle)
             {
-                // Change direction
-                mover.stop();
-                mover.run(-MIN_PWM);
-                return;
+                _oldAngle = _currentAngle;
+                Write(format("POS %d", _currentAngle));
+            }
+        }
+        
+        if (isChangingPWM())
+        {
+            if (isDecreasePWM())
+            {
+                if (direction > 0 && mover.getCurrentPWM() <= MIN_PWM)
+                {
+                    // Change direction
+                    mover.stop();
+                    mover.run(-MIN_PWM);
+                    return;
+                }
+    
+                mover.changePWM(-delta * direction);
+            }
+            else if (isIncreasePWM())
+            {
+                if (direction < 0 && mover.getCurrentPWM() <= MIN_PWM)
+                {
+                    // Change direction
+                    mover.stop();
+                    mover.run(MIN_PWM);
+                    return;
+                }
+    
+                mover.changePWM(delta * direction);
             }
 
-            mover.changePWM(-delta * direction);
+            setChangingPWM(0);
         }
-        else if (isIncreasePWM())
-        {
-            if (direction < 0 && mover.getCurrentPWM() <= MIN_PWM)
-            {
-                // Change direction
-                mover.stop();
-                mover.run(MIN_PWM);
-                return;
-            }
-
-            mover.changePWM(delta * direction);
-        }
-
-        setChangingPWM(0);
     }
 }
 
@@ -1551,14 +1555,18 @@ class Listener
                 }
                 else if (command == IncreasePWM)
                 {
+                    //TODO: analyze current mode and isRunning
                     Runner::setChangingPWM(1);
                     Write("OK");
                 }
                 else if (command == DecreasePWM)
                 {
+                    //TODO: analyze current mode and isRunning
                     Runner::setChangingPWM(-1);
                     Write("OK");
                 }
+                else
+                    Write("ERR");
             }
         }
 };
