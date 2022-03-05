@@ -1242,7 +1242,9 @@ void Runner::runVideo()
     {
 //        if (!UseBluetooth)
 //            selector.menu.display("Video...", "");
+        mover.resetAbsolutePos();
         mover.run(Settings::getVideoPWM());
+        _timer = millis();
         _isRunning = true;
         return;
     }
@@ -1268,14 +1270,16 @@ void Runner::runVideo()
     }
     else if (mover.getState() == mover.State::Run)
     {
-        if (UseBluetooth)
+        if (UseBluetooth && millis() - _timer >= 50)
         {
-            _currentAngle = mover.getCurrentPos() / DEGREE;
+            _currentAngle = mover.getAbsolutePos() / DEGREE;
             if (_currentAngle != _oldAngle)
             {
                 _oldAngle = _currentAngle;
                 Write(format("POS %d", _currentAngle));
             }
+
+            _timer = millis();
         }
         
         if (isChangingPWM())
@@ -1395,6 +1399,7 @@ class Listener
         const String Stop             = "STOP";
         const String IncreasePWM      = "INCPWM";
         const String DecreasePWM      = "DECPWM";
+        const String Undefined        = "UNDEF";
 
         void tick()
         {
@@ -1566,7 +1571,10 @@ class Listener
                     Write("OK");
                 }
                 else
-                    Write("ERR");
+                {
+                    Write(Undefined);
+                    Write(command); //TODO temporary
+                }
             }
         }
 };
