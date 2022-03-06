@@ -46,10 +46,15 @@ signed char FindInSteps(uint16_t numberOfSteps)
 
 char strBuf[30];
 const char terminator = '\n';
+void Write(char const* text)
+{
+    sprintf(strBuf, "%s%c", text, terminator);
+    Serial.write(strBuf);
+}
+
 void Write(const String& text)
 {
-    sprintf(strBuf, "%s%c", text.c_str(), terminator);
-    Serial.write(strBuf);
+    Write(text.c_str());
 }
 
 class Runner
@@ -79,8 +84,12 @@ class Runner
         static inline bool isStopping();
         static inline bool isIncreasePWM();
         static inline bool isDecreasePWM();
+        static bool canIncreasePWM();
+        static bool canDecreasePWM();
+        static bool canChangePWM(int delta);
         static inline bool isChangingPWM();
-        static int setChangingPWM(int value);
+        static void setChangingPWM(int value);
+        static bool needToChangeDirection(bool decreasing);
         static inline bool isRunning();
         static inline bool isBusy();
         static inline Mode getMode();
@@ -114,7 +123,7 @@ class Runner
         static int _changePWM;
     
         static void finalize();
-        static char* format(char* format, int arg);
+        static char const* format(char const* format, int arg);
         static void display(const String& top, const String& stepName);
 };
 
@@ -562,28 +571,30 @@ class Mover
 
         void changePWM(int delta)
         {
-            switch (_state)
-            {
-                case Move:
-                    if (_currentPWM == _maxPWM)
-                    {
-                        _maxPWM += delta;
-                        _maxPWM = PWMValidator::validate(_maxPWM);
-                        _currentPWM = _maxPWM;
-                        analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
-                    }
-                    break;
-                    
-                case Run:
-                    _maxPWM += delta;
-                    _maxPWM = PWMValidator::validate(_maxPWM);
-                    _currentPWM = _maxPWM;
-                    analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
-                    break;
+            if (!canChangePWM(delta))
+                return;
+                
+            _maxPWM += delta;
+            _maxPWM = PWMValidator::validate(_maxPWM);
+            _currentPWM = _maxPWM;
+            analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
+        }
 
-                default:
-                    break;
-            }
+        bool canChangePWM(int delta)
+        {
+            // Changing is avalable only when state is Move or Run
+            if (_state != Move && _state != Run)
+                return false;
+
+            // Changing is not awailable at the time of acceleration/deceleration
+            if (_currentPWM != _maxPWM)
+                return false;
+
+            int oldMaxPWM = _maxPWM;
+            int newMaxPWM = PWMValidator::validate(_maxPWM + delta);
+
+            // Return true when old _maxPWM will be not equal to the new one
+            return newMaxPWM != oldMaxPWM;
         }
 
         // Returns current position in graduations. Can be negative
@@ -838,14 +849,71 @@ inline bool Runner::isDecreasePWM()
     return _changePWM < 0;//    return UseBluetooth? _changePWM < 0 : enc.left();
 }
 
+bool Runner::canIncreasePWM()
+{
+    char direction = mover.isForward() ? 1 : -1;
+    switch (getMode())
+    {
+        case Video:
+            return needToChangeDirection(false) ? true : canChangePWM(delta * direction);
+
+        case Nonstop: // TODO
+        default:
+            return false;
+    }
+}
+
+bool Runner::canDecreasePWM()
+{
+    char direction = mover.isForward() ? 1 : -1;
+    switch (getMode())
+    {
+        case Video:
+            return needToChangeDirection(true) ? true : canChangePWM(-delta * direction);
+
+        case Nonstop: // TODO
+        default:
+            return false;
+    }
+}
+
+bool Runner::canChangePWM(int delta)
+{
+    if (!isRunning())
+        return false;
+
+    Mode mode = getMode();
+    if (mode != Video && mode != Nonstop)
+        return false;
+
+    return mover.canChangePWM(delta);
+}
+
 inline bool Runner::isChangingPWM()
 {
     return _changePWM != 0;//    return UseBluetooth? _changePWM != 0 : enc.turn();
 }
 
-int Runner::setChangingPWM(int value)
+void Runner::setChangingPWM(int value)
 {
     _changePWM = value;
+}
+
+bool Runner::needToChangeDirection(bool decreasing)
+{
+    char direction = mover.isForward() ? 1 : -1;
+    if (decreasing)
+    {
+        if (direction > 0 && mover.getCurrentPWM() <= MIN_PWM)
+            return true;
+    }
+    else
+    {
+        if (direction < 0 && mover.getCurrentPWM() <= MIN_PWM)
+            return true;
+    }
+
+    return false;
 }
 
 inline bool Runner::isRunning()
@@ -1286,7 +1354,7 @@ void Runner::runVideo()
         {
             if (isDecreasePWM())
             {
-                if (direction > 0 && mover.getCurrentPWM() <= MIN_PWM)
+                if (needToChangeDirection(true))
                 {
                     // Change direction
                     mover.stop();
@@ -1298,7 +1366,7 @@ void Runner::runVideo()
             }
             else if (isIncreasePWM())
             {
-                if (direction < 0 && mover.getCurrentPWM() <= MIN_PWM)
+                if (needToChangeDirection(false))
                 {
                     // Change direction
                     mover.stop();
@@ -1360,17 +1428,10 @@ void Runner::finalize()
         Write("END");
 }
 
-char* Runner::format(char* format, int arg)
+char const* Runner::format(char const* format, int arg)
 {
     sprintf(strBuf, format, arg);
     return strBuf;
-}
-
-void Runner::display(const String& top, const String& stepName)
-{
-    char strBuf[20];
-    sprintf(strBuf, "%s %d (%d)", stepName.c_str(), _stepNumber, Settings::getSteps());
-//    selector.menu.display(top, strBuf);
 }
 
 class Listener
@@ -1560,15 +1621,23 @@ class Listener
                 }
                 else if (command == IncreasePWM)
                 {
-                    //TODO: analyze current mode and isRunning
-                    Runner::setChangingPWM(1);
-                    Write("OK");
+                    if (Runner::canIncreasePWM())
+                    {
+                        Runner::setChangingPWM(1);
+                        Write("OK");
+                    }
+                    else
+                        Write("ERR");
                 }
                 else if (command == DecreasePWM)
                 {
-                    //TODO: analyze current mode and isRunning
-                    Runner::setChangingPWM(-1);
-                    Write("OK");
+                    if (Runner::canDecreasePWM())
+                    {
+                        Runner::setChangingPWM(-1);
+                        Write("OK");
+                    }
+                    else
+                        Write("ERR");
                 }
                 else
                 {
