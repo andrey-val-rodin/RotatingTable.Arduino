@@ -87,7 +87,7 @@ class Runner
         static void runRotate();
         static void runFreeMovement();
 
-        static void stop();
+        static void setStopping(bool stopping);
         static void setChangingPWM(int value);
         static bool canIncreasePWM();
         static bool canDecreasePWM();
@@ -843,9 +843,9 @@ int Runner::_currentAngle;
 int Runner::_oldAngle;
 int Runner::_changePWM = 0;
 
-void Runner::stop()
+void Runner::setStopping(bool stopping)
 {
-    _stop = true;
+    _stop = stopping;
 }
 
 inline bool Runner::isStopping()
@@ -1389,7 +1389,7 @@ void Runner::runVideo()
     char direction = mover.isForward() ? 1 : -1;
     if (isStopping())
     {
-        if (mover.getState() == mover.State::Run)
+        if (mover.isUniformMotion())
         {
             Settings::setVideoPWM(mover.getMaxPWM() * direction);
             mover.softStop();
@@ -1398,8 +1398,10 @@ void Runner::runVideo()
         {
             mover.stop();
         }
+
+        setStopping(false); // reset flag
     }
-    else if (mover.getState() == mover.State::Run)
+    else
     {
         if (UseBluetooth && millis() - _timer >= 50)
         {
@@ -1679,7 +1681,7 @@ class Listener
                 }
                 else if (command == Stop)
                 {
-                    Runner::stop();
+                    Runner::setStopping(true);
                     Write("OK");
                 }
                 else if (command == IncreasePWM)
