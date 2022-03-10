@@ -20,8 +20,6 @@
 
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
-bool UseBluetooth = true;
-
 uint16_t EEMEM stepsOffset;
 unsigned char EEMEM accelerationOffset;
 uint16_t EEMEM delayOffset;
@@ -45,14 +43,14 @@ signed char FindInSteps(uint16_t numberOfSteps)
 }
 
 const char terminator = '\n';
-void Write(char const* text)
+void Write(const char* text)
 {
     char strBuf[64];
     sprintf(strBuf, "%s%c", text, terminator);
-    Serial.write(strBuf);
+    Serial.write(strBuf, strlen(strBuf));
 }
 
-void Write(char const* text, int arg)
+void Write(const char* text, int arg)
 {
     char strBuf[64];
     sprintf(strBuf, "%s%d%c", text, arg, terminator);
@@ -850,17 +848,17 @@ void Runner::setStopping(bool stopping)
 
 inline bool Runner::isStopping()
 {
-    return _stop;//    return UseBluetooth? _stop : enc.press();
+    return _stop;
 }
 
 inline bool Runner::isIncreasePWM()
 {
-    return _changePWM > 0;//    return UseBluetooth? _changePWM > 0 : enc.right();
+    return _changePWM > 0;
 }
 
 inline bool Runner::isDecreasePWM()
 {
-    return _changePWM < 0;//    return UseBluetooth? _changePWM < 0 : enc.left();
+    return _changePWM < 0;
 }
 
 int Runner::calcNonstopDelta(bool decreasing)
@@ -957,7 +955,7 @@ bool Runner::canChangePWM(int delta)
 
 inline bool Runner::isChangingPWM()
 {
-    return _changePWM != 0;//    return UseBluetooth? _changePWM != 0 : enc.turn();
+    return _changePWM != 0;
 }
 
 void Runner::setChangingPWM(int value)
@@ -1040,7 +1038,7 @@ void Runner::runAutomatic()
 
     if (!mover.isStopped())
     {
-        if (UseBluetooth && millis() - _timer2 >= 50)
+        if (millis() - _timer2 >= 50)
         {
             _currentAngle = mover.getLatestPos() / DEGREE;
             if (_currentAngle != _oldAngle)
@@ -1076,10 +1074,7 @@ void Runner::runAutomatic()
     if (_currentState == Beginning && millis() - _timer >= 10) // 10 ms is a time for preparing camera
     {
         _stepNumber++;
-        if (UseBluetooth)
-            Write("STEP ", _stepNumber);
-        else
-            display(mode, stepName);
+        Write("STEP ", _stepNumber);
         digitalWrite(SHUTTER, CAMERA_HIGH); // make first photo
         _timer = _timer2 = millis();
         _currentState = Exposure;
@@ -1125,11 +1120,7 @@ void Runner::runAutomatic()
     if (_currentState == Delay && millis() - _timer >= Settings::getDelay())
     {
         _stepNumber++;
-        if (UseBluetooth)
-            Write("STEP ", _stepNumber);
-        else
-            display(mode, stepName);
-	    
+        Write("STEP ", _stepNumber);
         digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
         _timer = millis();
         _currentState = Exposure;
@@ -1157,8 +1148,6 @@ void Runner::runManual()
         // Starting
         _stepNumber = 1;
         _needToMove = false;
-        if (!UseBluetooth)
-            display(mode, stepName);
         digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
         _isBusy = true;
         _lastGraduations = 0;
@@ -1217,10 +1206,7 @@ void Runner::runManual()
         {
             _currentState = Waiting;
             _stepNumber++;
-            if (UseBluetooth)
-                Write("STEP ", _stepNumber);
-            else
-                display(mode, stepName);
+            Write("STEP ", _stepNumber);
         }
         else
         {
@@ -1249,7 +1235,7 @@ void Runner::runNonstop()
     }
     else if (!mover.isStopped())
     {
-        if (UseBluetooth && millis() - _timer2 >= 50)
+        if (millis() - _timer2 >= 50)
         {
             _currentAngle = mover.getLatestPos() / DEGREE;
             if (_currentAngle != _oldAngle)
@@ -1310,10 +1296,7 @@ void Runner::runNonstop()
     if (_currentState == Beginning && millis() - _timer >= Settings::getExposure())
     {
         _stepNumber++;
-        if (UseBluetooth)
-            Write("STEP ", _stepNumber);
-        else
-            display(mode, stepName);
+        Write("STEP ", _stepNumber);
         digitalWrite(SHUTTER, CAMERA_HIGH); // make first photo
         _nextSnapshotPos = stepGraduations;
         _timer = millis();
@@ -1339,10 +1322,7 @@ void Runner::runNonstop()
         }
         else
         {
-            if (UseBluetooth)
-                Write("STEP ", _stepNumber);
-            else
-                display(mode, stepName);
+            Write("STEP ", _stepNumber);
             digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
             _timer = millis();
             _currentState = Exposure;
@@ -1403,7 +1383,7 @@ void Runner::runVideo()
     }
     else
     {
-        if (UseBluetooth && millis() - _timer >= 50)
+        if (millis() - _timer >= 50)
         {
             _currentAngle = mover.getAbsolutePos() / DEGREE;
             if (_currentAngle != _oldAngle)
@@ -1501,13 +1481,13 @@ void Runner::finalize()
     _changePWM = 0;
     digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
     digitalWrite(CAMERA, CAMERA_LOW); // release camera
-    if (UseBluetooth)
-        Write("END");
+    Write("END");
 }
 
 class Listener
 {
     public:
+/*    See https://github.com/andrey-val-rodin/RotatingTable.Xamarin/blob/master/RotatingTable.Xamarin/RotatingTable.Xamarin/Models/Commands.cs
         const String Status          = "STATUS";
         const String Ready           = "READY";
         const String Running         = "RUNNING";
@@ -1538,13 +1518,13 @@ class Listener
         const String IncreasePWM     = "INCPWM";
         const String DecreasePWM     = "DECPWM";
         const String Undefined       = "UNDEF";
-
+*/
         void tick()
         {
             if (Serial.available())
             {
                 String command = Serial.readStringUntil(terminator);
-                if (command == Status)
+                if (command == "STATUS")
                 {
                     if (Runner::isRunning())
                         Write("RUNNING");
@@ -1636,7 +1616,7 @@ class Listener
                             Write("ERR");
                     }
                 }
-                else if (command == RunFreeMovement)
+                else if (command == "RUN FM")
                 {
                     Write("OK");
                     Runner::run(Runner::FreeMovement);
@@ -1655,36 +1635,36 @@ class Listener
                         Write("OK");
                     }
                 }
-                else if (command == RunAutoMode)
+                else if (command == "RUN AUTO")
                 {
                     Write("OK");
                     Runner::run(Runner::Auto);
                 }
-                else if (command == RunManualMode)
+                else if (command == "RUN MANUAL")
                 {
                 }
-                else if (command == RunNonStopMode)
+                else if (command == "RUN NS")
                 {
                     Write("OK");
                     Runner::run(Runner::Nonstop);
                 }
-                else if (command == RunVideoMode)
+                else if (command == "RUN VIDEO")
                 {
                     Write("OK");
                     Runner::run(Runner::Video);
                 }
-                else if (command == Shutter)
+                else if (command == "SHUTTER")
                 {
                 }
-                else if (command == Next)
+                else if (command == "NEXT")
                 {
                 }
-                else if (command == Stop)
+                else if (command == "STOP")
                 {
                     Runner::setStopping(true);
                     Write("OK");
                 }
-                else if (command == IncreasePWM)
+                else if (command == "INCPWM")
                 {
                     if (Runner::canIncreasePWM())
                     {
@@ -1694,7 +1674,7 @@ class Listener
                     else
                         Write("ERR");
                 }
-                else if (command == DecreasePWM)
+                else if (command == "DECPWM")
                 {
                     if (Runner::canDecreasePWM())
                     {
@@ -1706,7 +1686,7 @@ class Listener
                 }
                 else
                 {
-                    Write(Undefined + ":" + command);
+                    Write("UNDEF:" + command);
                 }
             }
         }
