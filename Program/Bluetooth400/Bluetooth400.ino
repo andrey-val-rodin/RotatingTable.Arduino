@@ -798,7 +798,7 @@ class Runner
             {
                 if (_stepNumber < stepCount)
                 {
-                    _timer = millis();
+                    _timer = _timer2 = millis();
                     _currentState = Delay;
                 }
                 else
@@ -813,13 +813,23 @@ class Runner
                 return;
             }
 
-            if (_currentState == Delay && millis() - _timer >= Settings::getDelay())
+            if (_currentState == Delay)
             {
-                _stepNumber++;
-                Write("STEP ", _stepNumber);
-                digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
-                _timer = millis();
-                _currentState = Exposure;
+                if (millis() - _timer2 >= 1000)
+                {
+                    // Send token at least once per second
+                    Write("WAIT");
+                    _timer2 = millis();
+                }
+
+                if (millis() - _timer >= Settings::getDelay())
+                {
+                    _stepNumber++;
+                    Write("STEP ", _stepNumber);
+                    digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
+                    _timer = millis();
+                    _currentState = Exposure;
+                }
             }
         }
 
