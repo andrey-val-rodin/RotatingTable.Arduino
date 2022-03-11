@@ -1272,6 +1272,11 @@ class Runner
             }
         }
 
+        inline bool isUniformMotion()
+        {
+            return mover.isUniformMotion();
+        }
+
     private:
         enum State : char
         {
@@ -1597,7 +1602,7 @@ class Listener
                 }
                 else if (command == "SOFTSTOP")
                 {
-                    if (runner.isBusy() || runner.isRunning())
+                    if (runner.getMode() == runner.Video && runner.isUniformMotion())
                     {
                         Write("OK");
                         runner.setStopping(runner.SoftStop);
