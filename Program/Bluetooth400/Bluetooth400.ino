@@ -26,7 +26,6 @@ uint16_t EEMEM delayOffset;
 uint16_t EEMEM exposureOffset;
 uint16_t EEMEM videoPWMOffset;
 float EEMEM nonstopFrequencyOffset;
-unsigned char EEMEM menuIndexOffset;
 
 const unsigned char stepsLength = 22;
 const uint16_t steps[stepsLength] =
@@ -61,117 +60,6 @@ void Write(const String& text)
 {
     Write(text.c_str());
 }
-
-class Runner
-{
-    public:
-        static const int delta = 5; // value to increment/decrement pwm
-
-        enum Mode
-        {
-            None,
-            Auto,
-            Manual,
-            Nonstop,
-            Rotate,
-            Video,
-            FreeMovement
-        };
-
-        static void runAutomatic();
-        static void runManual();
-        static void runNonstop();
-        static void runVideo();
-        static void runRotate();
-        static void runFreeMovement();
-
-        static void setStopping(bool stopping);
-        static void setChangingPWM(int value);
-        static bool canIncreasePWM();
-        static bool canDecreasePWM();
-        static inline bool isRunning();
-        static inline bool isBusy();
-        static inline Mode getMode();
-        static void run(Mode mode);
-        static void rotate(int pos);
-        static void tick();
-
-    private:
-        enum State : char
-        {
-            Waiting,
-            Beginning,
-            Delay,
-            Exposure,
-            Move
-        };
-
-        static Mode _mode;
-        static int16_t _stepNumber;
-        static unsigned long _timer;
-        static unsigned long _timer2;
-        static bool _isRunning;
-        static bool _isBusy;
-        static bool _stop;
-        static State _currentState;
-        static int32_t _lastGraduations;
-        static bool _needToMove;
-        static int _nextSnapshotPos;
-        static bool _needToStoreNewPWM;
-        static int _currentAngle;
-        static int _oldAngle;
-        static int _changePWM;
-    
-        static void finalize();
-        static void display(const String& top, const String& stepName);
-        static inline bool isStopping();
-        static inline bool isIncreasePWM();
-        static inline bool isDecreasePWM();
-        static bool canChangePWM(int delta);
-        static inline bool isChangingPWM();
-        static bool needToChangeDirection(bool decreasing);
-        static int calcNonstopDelta(bool decreasing);
-};
-
-struct MenuItem
-{
-    String top;
-    String bottom;
-};
-
-typedef void (*callback_t)();
-struct MenuItemsDef
-{
-    static const unsigned char topItemsLength = 6;
-    static MenuItem topItems[topItemsLength];
-
-    static const unsigned char settingsItemsLength = 4;
-    static MenuItem settingsItems[settingsItemsLength];
-
-    static const callback_t handlers[topItemsLength - 1];
-};
-
-MenuItem MenuItemsDef::topItems[topItemsLength] = {
-    {"%Auto",         ""},
-    {"%Manual",       ""},
-    {"%Nonstop",      ""},
-    {"Video",         ""},
-    {"Rotate 90\337", ""},
-    {"Settings",      ""}
-};
-MenuItem MenuItemsDef::settingsItems[settingsItemsLength] = {
-    {"Steps",         ""},
-    {"Acceleration",  ""},
-    {"Delay",         ""},
-    {"Exposure",      ""}
-};
-const callback_t MenuItemsDef::handlers[topItemsLength - 1] = {
-    Runner::runAutomatic,
-    Runner::runManual,
-    Runner::runNonstop,
-    Runner::runVideo,
-    Runner::runRotate
-};
 
 class PWMValidator
 {
@@ -383,23 +271,6 @@ class Settings
             Serial.println("Store frequency = " + String(frequency));
 #endif
             setNonstopFrequency(frequency);
-        }
-
-        static unsigned char getMenuIndex()
-        {
-            return validateMenuIndex(eeprom_read_byte(&menuIndexOffset));
-        }
-
-        static unsigned char validateMenuIndex(unsigned char value)
-        {
-            return value <= MenuItemsDef::topItemsLength
-                ? value
-                : 0; // use default
-        }
-
-        static void setMenuIndex(unsigned char value)
-        {
-            eeprom_update_byte(&menuIndexOffset, value);
         }
 
     private:
@@ -823,666 +694,700 @@ class Mover
 };
 Mover mover;
 
-
 // Runner
-Runner::Mode Runner::_mode = None;
-int16_t Runner::_stepNumber = 0;
-unsigned long Runner::_timer = 0;
-unsigned long Runner::_timer2 = 0;
-bool Runner::_isRunning = false;
-bool Runner::_isBusy = false;
-bool Runner::_stop = false;
-Runner::State Runner::_currentState;
-int32_t Runner::_lastGraduations;
-bool Runner::_needToMove;
-int Runner::_nextSnapshotPos;
-bool Runner::_needToStoreNewPWM;
-int Runner::_currentAngle;
-int Runner::_oldAngle;
-int Runner::_changePWM = 0;
-
-void Runner::setStopping(bool stopping)
+class Runner
 {
-    _stop = stopping;
-}
+    public:
+        const int delta = 5; // value to increment/decrement pwm
 
-inline bool Runner::isStopping()
-{
-    return _stop;
-}
+        enum Mode
+        {
+            None,
+            Auto,
+            Manual,
+            Nonstop,
+            Rotate,
+            Video,
+            FreeMovement
+        };
 
-inline bool Runner::isIncreasePWM()
-{
-    return _changePWM > 0;
-}
+        enum Stopping : char
+        {
+            NoStopping = 0,
+            Stop = 1,
+            SoftStop = 2
+        };
 
-inline bool Runner::isDecreasePWM()
-{
-    return _changePWM < 0;
-}
-
-int Runner::calcNonstopDelta(bool decreasing)
-{
-    int res;
-    if (decreasing)
-    {
-        res = delta;
-        if (mover.getCurrentPWM() - res < Settings::getLowRealNonstopPWM())
-            res = mover.getCurrentPWM() - Settings::getLowRealNonstopPWM();
-        res = -res;
-    }
-    else
-    {
-        res = delta;
-        if (mover.getCurrentPWM() + res > Settings::getHighRealNonstopPWM())
-            res = Settings::getHighRealNonstopPWM() - mover.getCurrentPWM();
-    }
-
-    return res;
-}
-
-bool Runner::needToChangeDirection(bool decreasing)
-{
-    char direction = mover.isForward() ? 1 : -1;
-    if (decreasing)
-    {
-        if (direction > 0 && mover.getCurrentPWM() <= MIN_PWM)
-            return true;
-    }
-    else
-    {
-        if (direction < 0 && mover.getCurrentPWM() <= MIN_PWM)
-            return true;
-    }
-
-    return false;
-}
-
-bool Runner::canIncreasePWM()
-{
-    char direction = mover.isForward() ? 1 : -1;
-    int d;
-    switch (getMode())
-    {
-        case Video:
-            d = delta * direction;
-            return needToChangeDirection(false) ? true : canChangePWM(d);
-
-        case Nonstop:
-            d = calcNonstopDelta(false);
-            return mover.getCurrentPWM() < Settings::getHighRealNonstopPWM() && canChangePWM(d);
-
-        default:
-            return false;
-    }
-}
-
-bool Runner::canDecreasePWM()
-{
-    char direction = mover.isForward() ? 1 : -1;
-    int d;
-    switch (getMode())
-    {
-        case Video:
-            d = -delta * direction;
-            return needToChangeDirection(true) ? true : canChangePWM(d);
-
-        case Nonstop:
-            d = calcNonstopDelta(true);
-            return mover.getCurrentPWM() > Settings::getLowRealNonstopPWM() && canChangePWM(d);
-        default:
-            return false;
-    }
-}
-
-bool Runner::canChangePWM(int delta)
-{
-    if (!isRunning())
-        return false;
-
-    Mode mode = getMode();
-    if (mode != Video && mode != Nonstop)
-        return false;
-
-    if (!mover.isUniformMotion())
-    {
-        // Assume that changing willbe available after acceleration
-        return true;
-    }
-
-    return mover.canChangePWM(delta);
-}
-
-inline bool Runner::isChangingPWM()
-{
-    return _changePWM != 0;
-}
-
-void Runner::setChangingPWM(int value)
-{
-    _changePWM = value;
-}
-
-inline bool Runner::isRunning()
-{
-    return _isRunning;
-}
-
-inline bool Runner::isBusy()
-{
-    return _isBusy;
-}
-
-inline Runner::Mode Runner::getMode()
-{
-    return _mode;
-}
-
-void Runner::run(Mode mode)
-{
-    _mode = mode;
-}
-
-void Runner::rotate(int pos)
-{
-    _currentState = Beginning;
-    mover.move(pos);
-}
-
-void Runner::tick()
-{
-    switch (_mode)
-    {
-        case Auto:
-            runAutomatic();
-            break;
-
-        case Manual:
-            runManual();
-            break;
-
-        case Nonstop:
-            runNonstop();
-            break;
-
-//        case Rotate:
-//            runRotate();
-//            break;
-
-        case Video:
-            runVideo();
-            break;
-
-        case FreeMovement:
-            runFreeMovement();
-            break;
+        void runAutomatic()
+        {
+            const String mode = "Auto...";
+            const String stepName = "photo";
+        #ifdef DEBUG_MODE
+            static int total = 0;
+        #endif
             
-        default:
-            break;
-    }
-}
-
-void Runner::runAutomatic()
-{
-    const String mode = "Auto...";
-    const String stepName = "photo";
-#ifdef DEBUG_MODE
-    static int total = 0;
-#endif
-    
-    if (isStopping())
-    {
-        finalize();
-        return;
-    }
-
-    if (!mover.isStopped())
-    {
-        if (millis() - _timer2 >= 50)
-        {
-            _currentAngle = mover.getLatestPos() / DEGREE;
-            if (_currentAngle != _oldAngle)
+            if (getStopping())
             {
-                _oldAngle = _currentAngle;
-                Write("POS ", _currentAngle);
+                finalize();
+                return;
             }
 
-            _timer2 = millis();
-        }
-
-        return;
-    }
-
-    int16_t stepCount = Settings::getSteps();
-    int16_t stepGraduations = GRADUATIONS / stepCount;
-    if (!_isRunning)
-    {
-        // Starting
-        _stepNumber = 0;
-        digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
-        _isRunning = true;
-        _lastGraduations = 0;
-        mover.resetAbsolutePos();
-        _timer = _timer2 = millis();
-        _currentState = Beginning;
-#ifdef DEBUG_MODE
-        total = 0;
-#endif
-        return;
-    }
-
-    if (_currentState == Beginning && millis() - _timer >= 10) // 10 ms is a time for preparing camera
-    {
-        _stepNumber++;
-        Write("STEP ", _stepNumber);
-        digitalWrite(SHUTTER, CAMERA_HIGH); // make first photo
-        _timer = _timer2 = millis();
-        _currentState = Exposure;
-        return;
-    }
-    
-    if (_currentState == Exposure && millis() - _timer >= Settings::getExposure())
-    {
-        digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
-        _currentState = Move;
-        int32_t absolutePos = mover.getAbsolutePos();
-        int error = _lastGraduations - absolutePos;
-#ifdef DEBUG_MODE
-        total += absolutePos;
-        Serial.println("stepGraduations = " + String(stepGraduations) + "  absolutePos = " +
-            String(absolutePos) + "  error = " + String(error));
-#endif
-        mover.resetAbsolutePos();
-        _lastGraduations = stepGraduations + error;
-        mover.move(_lastGraduations);
-        return;
-    }
-    
-    if (_currentState == Move)
-    {
-        if (_stepNumber < stepCount)
-        {
-            _timer = millis();
-            _currentState = Delay;
-        }
-        else
-        {
-#ifdef DEBUG_MODE
-            int32_t absolutePos = mover.getAbsolutePos();
-            total += absolutePos;
-            Serial.println("Total = " + String(total));
-#endif
-            finalize();
-        }
-        return;
-    }
-
-    if (_currentState == Delay && millis() - _timer >= Settings::getDelay())
-    {
-        _stepNumber++;
-        Write("STEP ", _stepNumber);
-        digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
-        _timer = millis();
-        _currentState = Exposure;
-    }
-}
-
-void Runner::runManual()
-{
-    const String mode = "Manual...";
-    const String stepName = "step";
-#ifdef DEBUG_MODE
-    static int total = 0;
-#endif
-    
-    if (isStopping())
-    {
-        finalize();
-        return;
-    }
-
-    int16_t stepCount = Settings::getSteps();
-    int stepGraduations = GRADUATIONS / stepCount;
-    if (!_isBusy)
-    {
-        // Starting
-        _stepNumber = 1;
-        _needToMove = false;
-        digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
-        _isBusy = true;
-        _lastGraduations = 0;
-        mover.resetAbsolutePos();
-        _timer = millis();
-        _currentState = Exposure;
-#ifdef DEBUG_MODE
-        total = 0;
-#endif
-        return;
-    }
-
-    if (_currentState == Exposure && millis() - _timer >= Settings::getExposure())
-    {
-        digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
-        _currentState = Waiting;
-        if (_needToMove)
-        {
-            _needToMove = false;
-            _currentState = Move;
-            int32_t absolutePos = mover.getAbsolutePos();
-            int error = _lastGraduations - absolutePos;
-#ifdef DEBUG_MODE
-            total += absolutePos;
-            Serial.println("stepGraduations = " + String(stepGraduations) + "  absolutePos = " +
-                String(absolutePos) + "  error = " + String(error));
-#endif
-            mover.resetAbsolutePos();
-            _lastGraduations = stepGraduations + error;
-            mover.move(_lastGraduations);
-        }
-
-        return;
-    }
-/*
-    if (photoButton.press() && _currentState == Waiting)
-    {
-        digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
-        _timer = millis();
-        _currentState = Exposure;
-        return;
-    }
-
-    if (nextButton.press() && _currentState == Waiting)
-    {
-        digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
-        _timer = millis();
-        _currentState = Exposure;
-        _needToMove = true;
-        return;
-    }
-*/
-    if (_currentState == Move && mover.isStopped())
-    {
-        if (_stepNumber < stepCount)
-        {
-            _currentState = Waiting;
-            _stepNumber++;
-            Write("STEP ", _stepNumber);
-        }
-        else
-        {
-#ifdef DEBUG_MODE
-            int32_t absolutePos = mover.getAbsolutePos();
-            total += absolutePos;
-            Serial.println("Total = " + String(total));
-#endif
-            finalize();
-        }
-    }
-}
-
-void Runner::runNonstop()
-{
-    const String mode = "Nonstop...";
-    const String stepName = "photo";
-#ifdef DEBUG_MODE
-    static int total = 0;
-#endif
-
-    if (isStopping())
-    {
-        finalize();
-        return;
-    }
-    else if (!mover.isStopped())
-    {
-        if (millis() - _timer2 >= 50)
-        {
-            _currentAngle = mover.getLatestPos() / DEGREE;
-            if (_currentAngle != _oldAngle)
+            if (!mover.isStopped())
             {
-                _oldAngle = _currentAngle;
-                Write("POS ", _currentAngle);
-            }
-
-            _timer2 = millis();
-        }
-
-        if (isChangingPWM())
-        {
-            if (mover.isUniformMotion())
-            {
-                if (isDecreasePWM())
+                if (millis() - _timer2 >= 50)
                 {
-                    int d = calcNonstopDelta(true);
-                    if (canChangePWM(d))
+                    _currentAngle = mover.getLatestPos() / DEGREE;
+                    if (_currentAngle != _oldAngle)
                     {
-                        mover.changePWM(d);
-                        _needToStoreNewPWM = true;
+                        _oldAngle = _currentAngle;
+                        Write("POS ", _currentAngle);
                     }
+
+                    _timer2 = millis();
                 }
-                else if (isIncreasePWM())
+
+                return;
+            }
+
+            int16_t stepCount = Settings::getSteps();
+            int16_t stepGraduations = GRADUATIONS / stepCount;
+            if (!_isRunning)
+            {
+                // Starting
+                _stepNumber = 0;
+                digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
+                _isRunning = true;
+                _lastGraduations = 0;
+                mover.resetAbsolutePos();
+                _timer = _timer2 = millis();
+                _currentState = Beginning;
+        #ifdef DEBUG_MODE
+                total = 0;
+        #endif
+                return;
+            }
+
+            if (_currentState == Beginning && millis() - _timer >= 10) // 10 ms is a time for preparing camera
+            {
+                _stepNumber++;
+                Write("STEP ", _stepNumber);
+                digitalWrite(SHUTTER, CAMERA_HIGH); // make first photo
+                _timer = _timer2 = millis();
+                _currentState = Exposure;
+                return;
+            }
+            
+            if (_currentState == Exposure && millis() - _timer >= Settings::getExposure())
+            {
+                digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
+                _currentState = Move;
+                int32_t absolutePos = mover.getAbsolutePos();
+                int error = _lastGraduations - absolutePos;
+        #ifdef DEBUG_MODE
+                total += absolutePos;
+                Serial.println("stepGraduations = " + String(stepGraduations) + "  absolutePos = " +
+                    String(absolutePos) + "  error = " + String(error));
+        #endif
+                mover.resetAbsolutePos();
+                _lastGraduations = stepGraduations + error;
+                mover.move(_lastGraduations);
+                return;
+            }
+            
+            if (_currentState == Move)
+            {
+                if (_stepNumber < stepCount)
                 {
-                    int d = calcNonstopDelta(false);
-                    if (canChangePWM(d))
+                    _timer = millis();
+                    _currentState = Delay;
+                }
+                else
+                {
+        #ifdef DEBUG_MODE
+                    int32_t absolutePos = mover.getAbsolutePos();
+                    total += absolutePos;
+                    Serial.println("Total = " + String(total));
+        #endif
+                    finalize();
+                }
+                return;
+            }
+
+            if (_currentState == Delay && millis() - _timer >= Settings::getDelay())
+            {
+                _stepNumber++;
+                Write("STEP ", _stepNumber);
+                digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
+                _timer = millis();
+                _currentState = Exposure;
+            }
+        }
+
+        void runManual()
+        {
+            const String mode = "Manual...";
+            const String stepName = "step";
+        #ifdef DEBUG_MODE
+            static int total = 0;
+        #endif
+            
+            if (getStopping())
+            {
+                finalize();
+                return;
+            }
+
+            int16_t stepCount = Settings::getSteps();
+            int stepGraduations = GRADUATIONS / stepCount;
+            if (!_isBusy)
+            {
+                // Starting
+                _stepNumber = 1;
+                _needToMove = false;
+                digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
+                _isBusy = true;
+                _lastGraduations = 0;
+                mover.resetAbsolutePos();
+                _timer = millis();
+                _currentState = Exposure;
+        #ifdef DEBUG_MODE
+                total = 0;
+        #endif
+                return;
+            }
+
+            if (_currentState == Exposure && millis() - _timer >= Settings::getExposure())
+            {
+                digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
+                _currentState = Waiting;
+                if (_needToMove)
+                {
+                    _needToMove = false;
+                    _currentState = Move;
+                    int32_t absolutePos = mover.getAbsolutePos();
+                    int error = _lastGraduations - absolutePos;
+        #ifdef DEBUG_MODE
+                    total += absolutePos;
+                    Serial.println("stepGraduations = " + String(stepGraduations) + "  absolutePos = " +
+                        String(absolutePos) + "  error = " + String(error));
+        #endif
+                    mover.resetAbsolutePos();
+                    _lastGraduations = stepGraduations + error;
+                    mover.move(_lastGraduations);
+                }
+
+                return;
+            }
+        /*
+            if (photoButton.press() && _currentState == Waiting)
+            {
+                digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
+                _timer = millis();
+                _currentState = Exposure;
+                return;
+            }
+
+            if (nextButton.press() && _currentState == Waiting)
+            {
+                digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
+                _timer = millis();
+                _currentState = Exposure;
+                _needToMove = true;
+                return;
+            }
+        */
+            if (_currentState == Move && mover.isStopped())
+            {
+                if (_stepNumber < stepCount)
+                {
+                    _currentState = Waiting;
+                    _stepNumber++;
+                    Write("STEP ", _stepNumber);
+                }
+                else
+                {
+        #ifdef DEBUG_MODE
+                    int32_t absolutePos = mover.getAbsolutePos();
+                    total += absolutePos;
+                    Serial.println("Total = " + String(total));
+        #endif
+                    finalize();
+                }
+            }
+        }
+
+        void runNonstop()
+        {
+            const String mode = "Nonstop...";
+            const String stepName = "photo";
+        #ifdef DEBUG_MODE
+            static int total = 0;
+        #endif
+
+            if (getStopping())
+            {
+                finalize();
+                return;
+            }
+            else if (!mover.isStopped())
+            {
+                if (millis() - _timer2 >= 50)
+                {
+                    _currentAngle = mover.getLatestPos() / DEGREE;
+                    if (_currentAngle != _oldAngle)
                     {
-                        mover.changePWM(d);
-                        _needToStoreNewPWM = true;
+                        _oldAngle = _currentAngle;
+                        Write("POS ", _currentAngle);
                     }
+
+                    _timer2 = millis();
+                }
+
+                if (isChangingPWM())
+                {
+                    if (mover.isUniformMotion())
+                    {
+                        if (isDecreasePWM())
+                        {
+                            int d = calcNonstopDelta(true);
+                            if (canChangePWM(d))
+                            {
+                                mover.changePWM(d);
+                                _needToStoreNewPWM = true;
+                            }
+                        }
+                        else if (isIncreasePWM())
+                        {
+                            int d = calcNonstopDelta(false);
+                            if (canChangePWM(d))
+                            {
+                                mover.changePWM(d);
+                                _needToStoreNewPWM = true;
+                            }
+                        }
+                    }
+
+                    setChangingPWM(0);
                 }
             }
 
-            setChangingPWM(0);
+            int16_t stepCount = Settings::getSteps();
+            int stepGraduations = GRADUATIONS / stepCount;
+            if (!_isRunning)
+            {
+                // Starting
+                _stepNumber = 0;
+                digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
+                _isRunning = true;
+                _needToStoreNewPWM = false;
+                _timer = _timer2 = millis();
+                _currentState = Beginning;
+        #ifdef DEBUG_MODE
+                total = 0;
+                mover.resetAbsolutePos();
+        #endif
+                return;
+            }
+
+            if (_currentState == Beginning && millis() - _timer >= Settings::getExposure())
+            {
+                _stepNumber++;
+                Write("STEP ", _stepNumber);
+                digitalWrite(SHUTTER, CAMERA_HIGH); // make first photo
+                _nextSnapshotPos = stepGraduations;
+                _timer = millis();
+                _currentState = Exposure;
+                mover.move(GRADUATIONS, Settings::getRealNonstopPWM());
+                return;
+            }
+
+            const int releaseShutterDelay = 50;
+            if (_currentState == Exposure && millis() - _timer >= releaseShutterDelay)
+            {
+                digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
+                _currentState = Move;
+            }
+
+            if (_currentState == Move && mover.getCurrentPos() >= _nextSnapshotPos)
+            {
+                _nextSnapshotPos += stepGraduations;
+                _stepNumber++;
+                if (_stepNumber > stepCount)
+                {
+                    _currentState = Waiting;
+                }
+                else
+                {
+                    Write("STEP ", _stepNumber);
+                    digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
+                    _timer = millis();
+                    _currentState = Exposure;
+                }
+            }
+
+            if (_isRunning && _currentState != Beginning && mover.isStopped())
+            {
+                if (_needToStoreNewPWM)
+                {
+        #ifdef DEBUG_MODE
+                    Serial.println("Store new pwm = " + String(mover.getMaxPWM()));
+        #endif
+                    Settings::setNonstopPWM(mover.getMaxPWM());
+                    _needToStoreNewPWM = false;
+                }
+
+        #ifdef DEBUG_MODE
+                int32_t absolutePos = mover.getAbsolutePos();
+                total += absolutePos;
+                Serial.println("Total = " + String(total));
+        #endif
+                finalize();
+            }
         }
-    }
 
-    int16_t stepCount = Settings::getSteps();
-    int stepGraduations = GRADUATIONS / stepCount;
-    if (!_isRunning)
-    {
-        // Starting
-        _stepNumber = 0;
-        digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
-        _isRunning = true;
-        _needToStoreNewPWM = false;
-        _timer = _timer2 = millis();
-        _currentState = Beginning;
-#ifdef DEBUG_MODE
-        total = 0;
-        mover.resetAbsolutePos();
-#endif
-        return;
-    }
-
-    if (_currentState == Beginning && millis() - _timer >= Settings::getExposure())
-    {
-        _stepNumber++;
-        Write("STEP ", _stepNumber);
-        digitalWrite(SHUTTER, CAMERA_HIGH); // make first photo
-        _nextSnapshotPos = stepGraduations;
-        _timer = millis();
-        _currentState = Exposure;
-        mover.move(GRADUATIONS, Settings::getRealNonstopPWM());
-        return;
-    }
-
-    const int releaseShutterDelay = 50;
-    if (_currentState == Exposure && millis() - _timer >= releaseShutterDelay)
-    {
-        digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
-        _currentState = Move;
-    }
-
-    if (_currentState == Move && mover.getCurrentPos() >= _nextSnapshotPos)
-    {
-        _nextSnapshotPos += stepGraduations;
-        _stepNumber++;
-        if (_stepNumber > stepCount)
+        void runVideo()
         {
-            _currentState = Waiting;
+            if (!_isRunning)
+            {
+                mover.resetAbsolutePos();
+                mover.run(Settings::getVideoPWM());
+                _timer = millis();
+                _isRunning = true;
+                return;
+            }
+
+            if (mover.isStopped())
+            {
+                finalize();
+                return;
+            }
+            
+            char direction = mover.isForward() ? 1 : -1;
+            if (getStopping())
+            {
+                if (mover.isUniformMotion() && getStopping() == SoftStop)
+                {
+                    Settings::setVideoPWM(mover.getMaxPWM() * direction);
+                    mover.softStop();
+                }
+                else
+                {
+                    mover.stop();
+                }
+
+                setStopping(NoStopping); // reset flag
+            }
+            else
+            {
+                if (millis() - _timer >= 50)
+                {
+                    _currentAngle = mover.getAbsolutePos() / DEGREE;
+                    if (_currentAngle != _oldAngle)
+                    {
+                        _oldAngle = _currentAngle;
+                        Write("POS ", _currentAngle);
+                    }
+
+                    _timer = millis();
+                }
+                
+                if (isChangingPWM())
+                {
+                    if (mover.isUniformMotion())
+                    {
+                        if (isDecreasePWM())
+                        {
+                            if (needToChangeDirection(true))
+                            {
+                                // Change direction
+                                mover.stop();
+                                mover.run(-MIN_PWM);
+                                return;
+                            }
+
+                            int d = -delta * direction;
+                            if (canChangePWM(d))
+                                mover.changePWM(d);
+                        }
+                        else if (isIncreasePWM())
+                        {
+                            if (needToChangeDirection(false))
+                            {
+                                // Change direction
+                                mover.stop();
+                                mover.run(MIN_PWM);
+                                return;
+                            }
+                
+                            int d = delta * direction;
+                            if (canChangePWM(d))
+                                mover.changePWM(delta * direction);
+                        }
+                    }
+
+                    setChangingPWM(0);
+                }
+            }
         }
-        else
+
+        void runFreeMovement()
         {
-            Write("STEP ", _stepNumber);
-            digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
-            _timer = millis();
-            _currentState = Exposure;
-        }
-    }
+            if (!_isBusy)
+            {
+                _currentState = Waiting;
+                _timer2 = millis();
+                _isBusy = true;
+            }
+            
+            if (getStopping())
+            {
+                finalize();
+                return;
+            }
 
-    if (_isRunning && _currentState != Beginning && mover.isStopped())
-    {
-        if (_needToStoreNewPWM)
+            if (_currentState == Beginning && mover.isStopped())
+            {
+                Write("END");
+                _currentState = Waiting;
+            }
+            else
+            {
+                if (millis() - _timer2 >= 50)
+                {
+                    _currentAngle = mover.getLatestPos() / DEGREE;
+                    if (_currentAngle != _oldAngle)
+                    {
+                        _oldAngle = _currentAngle;
+                        Write("POS ", _currentAngle);
+                    }
+
+                    _timer2 = millis();
+                }
+            }
+        }
+
+        inline bool isRunning()
         {
-#ifdef DEBUG_MODE
-            Serial.println("Store new pwm = " + String(mover.getMaxPWM()));
-#endif
-            Settings::setNonstopPWM(mover.getMaxPWM());
-            _needToStoreNewPWM = false;
+            return _isRunning;
         }
 
-#ifdef DEBUG_MODE
-        int32_t absolutePos = mover.getAbsolutePos();
-        total += absolutePos;
-        Serial.println("Total = " + String(total));
-#endif
-        finalize();
-    }
-}
+        inline bool isBusy()
+        {
+            return _isBusy;
+        }
 
-void Runner::runVideo()
-{
-    if (!_isRunning)
-    {
-        mover.resetAbsolutePos();
-        mover.run(Settings::getVideoPWM());
-        _timer = millis();
-        _isRunning = true;
-        return;
-    }
+        inline Mode getMode()
+        {
+            return _mode;
+        }
 
-    if (mover.isStopped())
-    {
-        finalize();
-        return;
-    }
+        void run(Mode mode)
+        {
+            _mode = mode;
+        }
+
+        void rotate(int pos)
+        {
+            _currentState = Beginning;
+            mover.move(pos);
+        }
+
+        void tick()
+        {
+            switch (_mode)
+            {
+                case Auto:
+                    runAutomatic();
+                    break;
+
+                case Manual:
+                    runManual();
+                    break;
+
+                case Nonstop:
+                    runNonstop();
+                    break;
+
+        //        case Rotate:
+        //            runRotate();
+        //            break;
+
+                case Video:
+                    runVideo();
+                    break;
+
+                case FreeMovement:
+                    runFreeMovement();
+                    break;
+                    
+                default:
+                    break;
+            }
+        }
+
+        void setStopping(Stopping stopping)
+        {
+            _stop = stopping;
+        }
+
+        void setChangingPWM(int value)
+        {
+            _changePWM = value;
+        }
+
+        bool canIncreasePWM()
+        {
+            char direction = mover.isForward() ? 1 : -1;
+            int d;
+            switch (getMode())
+            {
+                case Video:
+                    d = delta * direction;
+                    return needToChangeDirection(false) ? true : canChangePWM(d);
+
+                case Nonstop:
+                    d = calcNonstopDelta(false);
+                    return mover.getCurrentPWM() < Settings::getHighRealNonstopPWM() && canChangePWM(d);
+
+                default:
+                    return false;
+            }
+        }
+
+        bool canDecreasePWM()
+        {
+            char direction = mover.isForward() ? 1 : -1;
+            int d;
+            switch (getMode())
+            {
+                case Video:
+                    d = -delta * direction;
+                    return needToChangeDirection(true) ? true : canChangePWM(d);
+
+                case Nonstop:
+                    d = calcNonstopDelta(true);
+                    return mover.getCurrentPWM() > Settings::getLowRealNonstopPWM() && canChangePWM(d);
+                default:
+                    return false;
+            }
+        }
+
+    private:
+        enum State : char
+        {
+            Waiting,
+            Beginning,
+            Delay,
+            Exposure,
+            Move
+        };
+
+        Mode _mode = None;
+        int16_t _stepNumber = 0;
+        unsigned long _timer = 0;
+        unsigned long _timer2 = 0;
+        bool _isRunning = false;
+        bool _isBusy = false;
+        Stopping _stop = NoStopping;
+        State _currentState;
+        int32_t _lastGraduations;
+        bool _needToMove;
+        int _nextSnapshotPos;
+        bool _needToStoreNewPWM;
+        int _currentAngle;
+        int _oldAngle;
+        int _changePWM = 0;
     
-    char direction = mover.isForward() ? 1 : -1;
-    if (isStopping())
-    {
-        if (mover.isUniformMotion())
+        void finalize()
         {
-            Settings::setVideoPWM(mover.getMaxPWM() * direction);
-            mover.softStop();
-        }
-        else
-        {
+            _isRunning = _isBusy = false;
+            _stop = NoStopping;
+            _mode = None;
             mover.stop();
+            _stepNumber = 0;
+            _currentAngle = _oldAngle = 0;
+            _changePWM = 0;
+            digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
+            digitalWrite(CAMERA, CAMERA_LOW); // release camera
+            Write("END");
         }
 
-        setStopping(false); // reset flag
-    }
-    else
-    {
-        if (millis() - _timer >= 50)
+        inline Stopping getStopping()
         {
-            _currentAngle = mover.getAbsolutePos() / DEGREE;
-            if (_currentAngle != _oldAngle)
+            return _stop;
+        }
+
+        inline bool isIncreasePWM()
+        {
+            return _changePWM > 0;
+        }
+
+        inline bool isDecreasePWM()
+        {
+            return _changePWM < 0;
+        }
+
+        bool canChangePWM(int delta)
+        {
+            if (!isRunning())
+                return false;
+
+            Mode mode = getMode();
+            if (mode != Video && mode != Nonstop)
+                return false;
+
+            if (!mover.isUniformMotion())
             {
-                _oldAngle = _currentAngle;
-                Write("POS ", _currentAngle);
+                // Assume that changing willbe available after acceleration
+                return true;
             }
 
-            _timer = millis();
+            return mover.canChangePWM(delta);
         }
-        
-        if (isChangingPWM())
-        {
-            if (mover.isUniformMotion())
-            {
-                if (isDecreasePWM())
-                {
-                    if (needToChangeDirection(true))
-                    {
-                        // Change direction
-                        mover.stop();
-                        mover.run(-MIN_PWM);
-                        return;
-                    }
 
-                    int d = -delta * direction;
-                    if (canChangePWM(d))
-                        mover.changePWM(d);
-                }
-                else if (isIncreasePWM())
-                {
-                    if (needToChangeDirection(false))
-                    {
-                        // Change direction
-                        mover.stop();
-                        mover.run(MIN_PWM);
-                        return;
-                    }
-        
-                    int d = delta * direction;
-                    if (canChangePWM(d))
-                        mover.changePWM(delta * direction);
-                }
+        inline bool isChangingPWM()
+        {
+            return _changePWM != 0;
+        }
+
+        bool needToChangeDirection(bool decreasing)
+        {
+            char direction = mover.isForward() ? 1 : -1;
+            if (decreasing)
+            {
+                if (direction > 0 && mover.getCurrentPWM() <= MIN_PWM)
+                    return true;
+            }
+            else
+            {
+                if (direction < 0 && mover.getCurrentPWM() <= MIN_PWM)
+                    return true;
             }
 
-            setChangingPWM(0);
+            return false;
         }
-    }
-}
 
-void Runner::runFreeMovement()
-{
-    if (!_isBusy)
-    {
-        _currentState = Waiting;
-        _timer2 = millis();
-        _isBusy = true;
-    }
-    
-    if (isStopping())
-    {
-        finalize();
-        return;
-    }
-
-    if (_currentState == Beginning && mover.isStopped())
-    {
-        Write("END");
-        _currentState = Waiting;
-    }
-    else
-    {
-        if (millis() - _timer2 >= 50)
+        int calcNonstopDelta(bool decreasing)
         {
-            _currentAngle = mover.getLatestPos() / DEGREE;
-            if (_currentAngle != _oldAngle)
+            int res;
+            if (decreasing)
             {
-                _oldAngle = _currentAngle;
-                Write("POS ", _currentAngle);
+                res = delta;
+                if (mover.getCurrentPWM() - res < Settings::getLowRealNonstopPWM())
+                    res = mover.getCurrentPWM() - Settings::getLowRealNonstopPWM();
+                res = -res;
+            }
+            else
+            {
+                res = delta;
+                if (mover.getCurrentPWM() + res > Settings::getHighRealNonstopPWM())
+                    res = Settings::getHighRealNonstopPWM() - mover.getCurrentPWM();
             }
 
-            _timer2 = millis();
+            return res;
         }
-    }
-}
-
-void Runner::finalize()
-{
-    _isRunning = _isBusy = false;
-    _stop = false;
-    _mode = None;
-    mover.stop();
-    _stepNumber = 0;
-    _currentAngle = _oldAngle = 0;
-    _changePWM = 0;
-    digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
-    digitalWrite(CAMERA, CAMERA_LOW); // release camera
-    Write("END");
-}
+};
+Runner runner;
 
 class Listener
 {
@@ -1515,6 +1420,7 @@ class Listener
         const String Shutter         = "SHUTTER";
         const String Next            = "NEXT";
         const String Stop            = "STOP";
+        const String SoftStop        = "SOFTSTOP";
         const String IncreasePWM     = "INCPWM";
         const String DecreasePWM     = "DECPWM";
         const String Undefined       = "UNDEF";
@@ -1526,9 +1432,9 @@ class Listener
                 String command = Serial.readStringUntil(terminator);
                 if (command == "STATUS")
                 {
-                    if (Runner::isRunning())
+                    if (runner.isRunning())
                         Write("RUNNING");
-                    else if (Runner::isBusy())
+                    else if (runner.isBusy())
                         Write("BUSY");
                     else
                         Write("READY");
@@ -1558,7 +1464,7 @@ class Listener
                     command.replace("SET ", "");
                     if (command.startsWith("STEPS "))
                     {
-                        if (Runner::getMode() != Runner::None)
+                        if (runner.getMode() != runner.None)
                         {
                             Write("ERR");
                         }
@@ -1616,42 +1522,62 @@ class Listener
                             Write("ERR");
                     }
                 }
-                else if (command == "RUN FM")
-                {
-                    Write("OK");
-                    Runner::run(Runner::FreeMovement);
-                }
-                else if (command.startsWith("FM "))
-                {
-                    if (!Runner::isBusy() || Runner::getMode() != Runner::FreeMovement)
-                    {
-                        Write("ERR");
-                    }
-                    else
-                    {
-                        command.replace("FM ", "");
-                        int value = command.toInt();
-                        Runner::rotate(value * DEGREE);
-                        Write("OK");
-                    }
-                }
                 else if (command == "RUN AUTO")
                 {
-                    Write("OK");
-                    Runner::run(Runner::Auto);
+                    if (runner.isBusy() || runner.isRunning())
+                        Write("ERR");
+                    else
+                    {
+                        Write("OK");
+                        runner.run(runner.Auto);
+                    }
                 }
                 else if (command == "RUN MANUAL")
                 {
                 }
                 else if (command == "RUN NS")
                 {
-                    Write("OK");
-                    Runner::run(Runner::Nonstop);
+                    if (runner.isBusy() || runner.isRunning())
+                        Write("ERR");
+                    else
+                    {
+                        Write("OK");
+                        runner.run(runner.Nonstop);
+                    }
                 }
                 else if (command == "RUN VIDEO")
                 {
-                    Write("OK");
-                    Runner::run(Runner::Video);
+                    if (runner.isBusy() || runner.isRunning())
+                        Write("ERR");
+                    else
+                    {
+                        Write("OK");
+                        runner.run(runner.Video);
+                    }
+                }
+                else if (command == "RUN FM")
+                {
+                    if (runner.isBusy() || runner.isRunning())
+                        Write("ERR");
+                    else
+                    {
+                        Write("OK");
+                        runner.run(runner.FreeMovement);
+                    }
+                }
+                else if (command.startsWith("FM "))
+                {
+                    if (!runner.isBusy() || runner.getMode() != runner.FreeMovement)
+                    {
+                        Write("ERR");
+                    }
+                    else
+                    {
+                        Write("OK");
+                        command.replace("FM ", "");
+                        int value = command.toInt();
+                        runner.rotate(value * DEGREE);
+                    }
                 }
                 else if (command == "SHUTTER")
                 {
@@ -1661,25 +1587,40 @@ class Listener
                 }
                 else if (command == "STOP")
                 {
-                    Runner::setStopping(true);
-                    Write("OK");
+                    if (runner.isBusy() || runner.isRunning())
+                    {
+                        Write("OK");
+                        runner.setStopping(runner.Stop);
+                    }
+                    else
+                        Write("ERR");
+                }
+                else if (command == "SOFTSTOP")
+                {
+                    if (runner.isBusy() || runner.isRunning())
+                    {
+                        Write("OK");
+                        runner.setStopping(runner.SoftStop);
+                    }
+                    else
+                        Write("ERR");
                 }
                 else if (command == "INCPWM")
                 {
-                    if (Runner::canIncreasePWM())
+                    if (runner.canIncreasePWM())
                     {
-                        Runner::setChangingPWM(1);
                         Write("OK");
+                        runner.setChangingPWM(1);
                     }
                     else
                         Write("ERR");
                 }
                 else if (command == "DECPWM")
                 {
-                    if (Runner::canDecreasePWM())
+                    if (runner.canDecreasePWM())
                     {
-                        Runner::setChangingPWM(-1);
                         Write("OK");
+                        runner.setChangingPWM(-1);
                     }
                     else
                         Write("ERR");
@@ -1714,6 +1655,6 @@ void setup()
 void loop()
 {
     mover.tick();
-    Runner::tick();
+    runner.tick();
     listener.tick();
 }
