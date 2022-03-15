@@ -722,9 +722,9 @@ class Runner
         {
             const String mode = "Auto...";
             const String stepName = "photo";
-        #ifdef DEBUG_MODE
+#ifdef DEBUG_MODE
             static int total = 0;
-        #endif
+#endif
             
             if (getStopping())
             {
@@ -761,9 +761,9 @@ class Runner
                 mover.resetAbsolutePos();
                 _timer = _timer2 = millis();
                 _currentState = Beginning;
-        #ifdef DEBUG_MODE
+#ifdef DEBUG_MODE
                 total = 0;
-        #endif
+#endif
                 return;
             }
 
@@ -783,11 +783,11 @@ class Runner
                 _currentState = Move;
                 int32_t absolutePos = mover.getAbsolutePos();
                 int error = _lastGraduations - absolutePos;
-        #ifdef DEBUG_MODE
+#ifdef DEBUG_MODE
                 total += absolutePos;
                 Serial.println("stepGraduations = " + String(stepGraduations) + "  absolutePos = " +
                     String(absolutePos) + "  error = " + String(error));
-        #endif
+#endif
                 mover.resetAbsolutePos();
                 _lastGraduations = stepGraduations + error;
                 mover.move(_lastGraduations);
@@ -803,11 +803,11 @@ class Runner
                 }
                 else
                 {
-        #ifdef DEBUG_MODE
+#ifdef DEBUG_MODE
                     int32_t absolutePos = mover.getAbsolutePos();
                     total += absolutePos;
                     Serial.println("Total = " + String(total));
-        #endif
+#endif
                     finalize();
                 }
                 return;
@@ -837,13 +837,30 @@ class Runner
         {
             const String mode = "Manual...";
             const String stepName = "step";
-        #ifdef DEBUG_MODE
+#ifdef DEBUG_MODE
             static int total = 0;
-        #endif
+#endif
             
             if (getStopping())
             {
                 finalize();
+                return;
+            }
+
+            if (!mover.isStopped())
+            {
+                if (millis() - _timer2 >= 50)
+                {
+                    _currentAngle = mover.getLatestPos() / DEGREE;
+                    if (_currentAngle != _oldAngle)
+                    {
+                        _oldAngle = _currentAngle;
+                        Write("POS ", _currentAngle);
+                    }
+
+                    _timer2 = millis();
+                }
+
                 return;
             }
 
@@ -853,6 +870,7 @@ class Runner
             {
                 // Starting
                 _stepNumber = 1;
+                Write("STEP ", _stepNumber);
                 _needToMove = false;
                 digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
                 _isBusy = true;
@@ -860,9 +878,9 @@ class Runner
                 mover.resetAbsolutePos();
                 _timer = millis();
                 _currentState = Exposure;
-        #ifdef DEBUG_MODE
+#ifdef DEBUG_MODE
                 total = 0;
-        #endif
+#endif
                 return;
             }
 
@@ -876,11 +894,11 @@ class Runner
                     _currentState = Move;
                     int32_t absolutePos = mover.getAbsolutePos();
                     int error = _lastGraduations - absolutePos;
-        #ifdef DEBUG_MODE
+#ifdef DEBUG_MODE
                     total += absolutePos;
                     Serial.println("stepGraduations = " + String(stepGraduations) + "  absolutePos = " +
                         String(absolutePos) + "  error = " + String(error));
-        #endif
+#endif
                     mover.resetAbsolutePos();
                     _lastGraduations = stepGraduations + error;
                     mover.move(_lastGraduations);
@@ -888,24 +906,26 @@ class Runner
 
                 return;
             }
-        /*
-            if (photoButton.press() && _currentState == Waiting)
+
+            if (isPhoto() && _currentState == Waiting)
             {
                 digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
                 _timer = millis();
                 _currentState = Exposure;
+                setPhoto(false);
                 return;
             }
 
-            if (nextButton.press() && _currentState == Waiting)
+            if (isNext() && _currentState == Waiting)
             {
                 digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
                 _timer = millis();
                 _currentState = Exposure;
                 _needToMove = true;
+                setNext(false);
                 return;
             }
-        */
+
             if (_currentState == Move && mover.isStopped())
             {
                 if (_stepNumber < stepCount)
@@ -916,11 +936,11 @@ class Runner
                 }
                 else
                 {
-        #ifdef DEBUG_MODE
+#ifdef DEBUG_MODE
                     int32_t absolutePos = mover.getAbsolutePos();
                     total += absolutePos;
                     Serial.println("Total = " + String(total));
-        #endif
+#endif
                     finalize();
                 }
             }
@@ -930,9 +950,9 @@ class Runner
         {
             const String mode = "Nonstop...";
             const String stepName = "photo";
-        #ifdef DEBUG_MODE
+#ifdef DEBUG_MODE
             static int total = 0;
-        #endif
+#endif
 
             if (getStopping())
             {
@@ -992,10 +1012,10 @@ class Runner
                 _needToStoreNewPWM = false;
                 _timer = _timer2 = millis();
                 _currentState = Beginning;
-        #ifdef DEBUG_MODE
+#ifdef DEBUG_MODE
                 total = 0;
                 mover.resetAbsolutePos();
-        #endif
+#endif
                 return;
             }
 
@@ -1039,18 +1059,18 @@ class Runner
             {
                 if (_needToStoreNewPWM)
                 {
-        #ifdef DEBUG_MODE
+#ifdef DEBUG_MODE
                     Serial.println("Store new pwm = " + String(mover.getMaxPWM()));
-        #endif
+#endif
                     Settings::setNonstopPWM(mover.getMaxPWM());
                     _needToStoreNewPWM = false;
                 }
 
-        #ifdef DEBUG_MODE
+#ifdef DEBUG_MODE
                 int32_t absolutePos = mover.getAbsolutePos();
                 total += absolutePos;
                 Serial.println("Total = " + String(total));
-        #endif
+#endif
                 finalize();
             }
         }
@@ -1218,10 +1238,6 @@ class Runner
                     runNonstop();
                     break;
 
-        //        case Rotate:
-        //            runRotate();
-        //            break;
-
                 case Video:
                     runVideo();
                     break;
@@ -1287,6 +1303,26 @@ class Runner
             return mover.isUniformMotion();
         }
 
+        inline bool isNext()
+        {
+            return _next;
+        }
+
+        void setNext(bool value)
+        {
+            _next = value;
+        }
+
+        inline bool isPhoto()
+        {
+            return _photo;
+        }
+
+        void setPhoto(bool value)
+        {
+            _photo = value;
+        }
+
     private:
         enum State : char
         {
@@ -1312,6 +1348,8 @@ class Runner
         int _currentAngle;
         int _oldAngle;
         int _changePWM = 0;
+        bool _next = false;
+        bool _photo = false;
     
         void finalize()
         {
@@ -1322,6 +1360,7 @@ class Runner
             _stepNumber = 0;
             _currentAngle = _oldAngle = 0;
             _changePWM = 0;
+             _next = _photo = false;
             digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
             digitalWrite(CAMERA, CAMERA_LOW); // release camera
             Write("END");
@@ -1549,6 +1588,13 @@ class Listener
                 }
                 else if (command == "RUN MANUAL")
                 {
+                    if (runner.isBusy() || runner.isRunning())
+                        Write("ERR");
+                    else
+                    {
+                        Write("OK");
+                        runner.run(runner.Manual);
+                    }
                 }
                 else if (command == "RUN NS")
                 {
@@ -1596,9 +1642,27 @@ class Listener
                 }
                 else if (command == "SHUTTER")
                 {
+                    if (!runner.isBusy() || runner.getMode() != runner.Manual)
+                    {
+                        Write("ERR");
+                    }
+                    else
+                    {
+                        Write("OK");
+                        runner.setPhoto(true);
+                    }
                 }
                 else if (command == "NEXT")
                 {
+                    if (!runner.isBusy() || runner.getMode() != runner.Manual)
+                    {
+                        Write("ERR");
+                    }
+                    else
+                    {
+                        Write("OK");
+                        runner.setNext(true);
+                    }
                 }
                 else if (command == "STOP")
                 {
