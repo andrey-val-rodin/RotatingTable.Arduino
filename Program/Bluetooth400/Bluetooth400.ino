@@ -20,13 +20,6 @@
 
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
-uint16_t EEMEM stepsOffset;
-unsigned char EEMEM accelerationOffset;
-uint16_t EEMEM delayOffset;
-uint16_t EEMEM exposureOffset;
-uint16_t EEMEM videoPWMOffset;
-float EEMEM nonstopFrequencyOffset;
-
 const unsigned char stepsLength = 22;
 const uint16_t steps[stepsLength] =
     { 2, 4, 5, 6, 8, 9, 10, 12, 15, 18, 20, 24, 30, 36, 40, 45, 60, 72, 90, 120, 180, 360 };
@@ -87,7 +80,7 @@ class Settings
         
         static uint16_t getSteps()
         {
-            return validateSteps(eeprom_read_word(&stepsOffset));
+            return validateSteps(_steps);
         }
 
         static bool checkSteps(uint16_t value)
@@ -104,12 +97,12 @@ class Settings
 
         static void setSteps(uint16_t value)
         {
-            eeprom_update_word(&stepsOffset, value);
+            _steps = value;
         }
 
         static unsigned char getAcceleration()
         {
-            return validateAcceleration(eeprom_read_byte(&accelerationOffset));
+            return validateAcceleration(_acceleration);
         }
 
         // Returns number of graduations for acceleration and deceleration from min to max PWM and vice versa.
@@ -140,12 +133,12 @@ class Settings
 
         static void setAcceleration(unsigned char value)
         {
-            eeprom_update_byte(&accelerationOffset, value);
+            _acceleration = value;
         }
 
         static uint16_t getDelay()
         {
-            return validateDelay(eeprom_read_word(&delayOffset));
+            return validateDelay(_delay);
         }
 
         static bool checkDelay(uint16_t value)
@@ -162,12 +155,12 @@ class Settings
 
         static void setDelay(uint16_t value)
         {
-            eeprom_update_word(&delayOffset, value);
+            _delay = value;
         }
 
         static uint16_t getExposure()
         {
-            return validateExposure(eeprom_read_word(&exposureOffset));
+            return _exposure;
         }
 
         static bool checkExposure(uint16_t value)
@@ -184,12 +177,12 @@ class Settings
 
         static void setExposure(uint16_t value)
         {
-            eeprom_update_word(&exposureOffset, value);
+            _exposure = value;
         }
 
         static int16_t getVideoPWM()
         {
-            return validateVideoPWM(eeprom_read_word(&videoPWMOffset));
+            return validateVideoPWM(_videoPWM);
         }
 
         static int16_t validateVideoPWM(int16_t value)
@@ -203,12 +196,12 @@ class Settings
 
         static void setVideoPWM(int16_t value)
         {
-            eeprom_update_word(&videoPWMOffset, value);
+            _videoPWM = value;
         }
 
         static float getNonstopFrequency()
         {
-            return validateNonstopFrequency(eeprom_read_float(&nonstopFrequencyOffset));
+            return validateNonstopFrequency(_nonstopFrequency);
         }
 
         static float validateNonstopFrequency(float value)
@@ -261,7 +254,7 @@ class Settings
 #ifdef DEBUG_MODE
             Serial.println("Store frequency in EEPROM = " + String(value));
 #endif
-            eeprom_update_float(&nonstopFrequencyOffset, value);
+            _nonstopFrequency = value;
         }
         
         static void setNonstopPWM(unsigned char value)
@@ -274,6 +267,13 @@ class Settings
         }
 
     private:
+        static uint16_t _steps;
+        static unsigned char _acceleration;
+        static uint16_t _delay;
+        static uint16_t _exposure;
+        static uint16_t _videoPWM;
+        static float _nonstopFrequency;
+
         static float getTimeOfTurn(unsigned char pwm)
         {
             static const unsigned char buff[] =
@@ -329,6 +329,12 @@ class Settings
             return result + 0.5; // rounded
         }
 };
+uint16_t Settings::_steps;
+unsigned char Settings::_acceleration;
+uint16_t Settings::_delay;
+uint16_t Settings::_exposure;
+uint16_t Settings::_videoPWM;
+float Settings::_nonstopFrequency;
 
 class Mover
 {
