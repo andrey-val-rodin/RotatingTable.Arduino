@@ -185,13 +185,18 @@ class Settings
             return validateVideoPWM(_videoPWM);
         }
 
-        static int16_t validateVideoPWM(int16_t value)
+        static bool checkVideoPWM(int16_t value)
         {
             return 
                 (-MAX_PWM <= value && value <= -MIN_PWM) ||
-                ( MIN_PWM <= value && value <=  MAX_PWM)
-                    ? value
-                    : 100; // use default
+                ( MIN_PWM <= value && value <=  MAX_PWM);
+        }
+
+        static int16_t validateVideoPWM(int16_t value)
+        {
+            return checkVideoPWM(value)
+                ? value
+                : 100; // use default
         }
 
         static void setVideoPWM(int16_t value)
@@ -204,9 +209,14 @@ class Settings
             return validateNonstopFrequency(_nonstopFrequency);
         }
 
+        static bool checkNonstopFrequency(float value)
+        {
+            return lowNonstopFrequency <= value && value <= highNonstopFrequency;
+        }
+
         static float validateNonstopFrequency(float value)
         {
-            return lowNonstopFrequency <= value && value <= highNonstopFrequency
+            return checkNonstopFrequency(value)
                 ? value
                 : lowNonstopFrequency; // use default
         }
@@ -216,7 +226,7 @@ class Settings
             float frequency = getNonstopFrequency();
             unsigned char result = frequencyToPWM(frequency);
 #ifdef DEBUG_MODE
-            Serial.println("frequency from EEPROM = " + String(frequency) + "\tpwm = " + String(result));
+            Serial.println("stored frequency = " + String(frequency) + "\tpwm = " + String(result));
 #endif
             return PWMValidator::validate(result);
         }
@@ -252,7 +262,7 @@ class Settings
         static void setNonstopFrequency(float value)
         {
 #ifdef DEBUG_MODE
-            Serial.println("Store frequency in EEPROM = " + String(value));
+            Serial.println("Store frequency = " + String(value));
 #endif
             _nonstopFrequency = value;
         }
@@ -271,7 +281,7 @@ class Settings
         static unsigned char _acceleration;
         static uint16_t _delay;
         static uint16_t _exposure;
-        static uint16_t _videoPWM;
+        static int16_t _videoPWM;
         static float _nonstopFrequency;
 
         static float getTimeOfTurn(unsigned char pwm)
@@ -333,7 +343,7 @@ uint16_t Settings::_steps;
 unsigned char Settings::_acceleration;
 uint16_t Settings::_delay;
 uint16_t Settings::_exposure;
-uint16_t Settings::_videoPWM;
+int16_t Settings::_videoPWM;
 float Settings::_nonstopFrequency;
 
 class Mover
@@ -1465,10 +1475,14 @@ class Listener
         const String GetAcceleration = "GET ACC";
         const String GetExposure     = "GET EXP";
         const String GetDelay        = "GET DELAY";
+        const String GetVideoPWM     = "GET VPWM";
+        const String GetNFrequency   = "GET NFREQ";
         const String SetAcceleration = "SET ACC";
         const String SetSteps        = "SET STEPS";
         const String SetExposure     = "SET EXP";
         const String SetDelay        = "SET DELAY";
+        const String SetVideoPWM     = "SET VPWM";
+        const String SetNFrequency   = "SET NFREQ";
         const String Position        = "POS ";
         const String GetMode         = "GET MODE";
         const String RunAutoMode     = "RUN AUTO";
@@ -1503,21 +1517,17 @@ class Listener
                 {
                     command.replace("GET ", "");
                     if (command == "STEPS")
-                    {
                         Write(String(Settings::getSteps()));
-                    }
                     else if (command == "ACC")
-                    {
                         Write(String(Settings::getAcceleration()));
-                    }
                     else if (command == "EXP")
-                    {
                         Write(String(Settings::getExposure()));
-                    }
                     else if (command == "DELAY")
-                    {
                         Write(String(Settings::getDelay()));
-                    }
+                    else if (command == "VPWM")
+                        Write(String(Settings::getVideoPWM()));
+                    else if (command == "NFREQ")
+                        Write(String(Settings::getNonstopFrequency()));
                 }
                 else if (command.startsWith("SET "))
                 {
@@ -1535,7 +1545,7 @@ class Listener
                             if (Settings::checkSteps(value))
                             {
                                 Settings::setSteps(value);
-                                // Check whether the value was successfully stored in EEPROM
+                                // Check whether the value was successfully stored
                                 Write(Settings::getSteps() == value? "OK" : "ERR");
                             }
                             else
@@ -1549,7 +1559,7 @@ class Listener
                         if (Settings::checkAcceleration(value))
                         {
                             Settings::setAcceleration(value);
-                            // Check whether the value was successfully stored in EEPROM
+                            // Check whether the value was successfully stored
                             Write(Settings::getAcceleration() == value? "OK" : "ERR");
                         }
                         else
@@ -1562,7 +1572,7 @@ class Listener
                         if (Settings::checkExposure(value))
                         {
                             Settings::setExposure(value);
-                            // Check whether the value was successfully stored in EEPROM
+                            // Check whether the value was successfully stored
                             Write(Settings::getExposure() == value? "OK" : "ERR");
                         }
                         else
@@ -1575,8 +1585,34 @@ class Listener
                         if (Settings::checkDelay(value))
                         {
                             Settings::setDelay(value);
-                            // Check whether the value was successfully stored in EEPROM
+                            // Check whether the value was successfully stored
                             Write(Settings::getDelay() == value? "OK" : "ERR");
+                        }
+                        else
+                            Write("ERR");
+                    }
+                    else if (command.startsWith("VPWM"))
+                    {
+                        command.replace("VPWM ", "");
+                        int16_t value = command.toInt();
+                        if (Settings::checkVideoPWM(value))
+                        {
+                            Settings::setVideoPWM(value);
+                            // Check whether the value was successfully stored
+                            Write(Settings::getVideoPWM() == value? "OK" : "ERR");
+                        }
+                        else
+                            Write("ERR");
+                    }
+                    else if (command.startsWith("NFREQ"))
+                    {
+                        command.replace("NFREQ ", "");
+                        float value = command.toFloat();
+                        if (Settings::checkNonstopFrequency(value))
+                        {
+                            Settings::setNonstopFrequency(value);
+                            // Check whether the value was successfully stored
+                            Write(Settings::getNonstopFrequency() == value? "OK" : "ERR");
                         }
                         else
                             Write("ERR");
