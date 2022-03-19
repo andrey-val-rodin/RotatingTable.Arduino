@@ -816,8 +816,6 @@ Mover mover;
 class Runner
 {
     public:
-        const int delta = 5; // value to increment/decrement pwm
-
         enum Mode
         {
             None,
@@ -1253,7 +1251,7 @@ class Runner
                                 return;
                             }
 
-                            int d = -delta * direction;
+                            int d = -calcDelta() * direction;
                             if (canChangePWM(d))
                                 mover.changePWM(d);
                         }
@@ -1267,9 +1265,9 @@ class Runner
                                 return;
                             }
                 
-                            int d = delta * direction;
+                            int d = calcDelta() * direction;
                             if (canChangePWM(d))
-                                mover.changePWM(delta * direction);
+                                mover.changePWM(d);
                         }
                     }
 
@@ -1386,7 +1384,7 @@ class Runner
             switch (getMode())
             {
                 case Video:
-                    d = delta * direction;
+                    d = calcDelta() * direction;
                     return needToChangeDirection(false) ? true : canChangePWM(d);
 
                 case Nonstop:
@@ -1405,7 +1403,7 @@ class Runner
             switch (getMode())
             {
                 case Video:
-                    d = -delta * direction;
+                    d = -calcDelta() * direction;
                     return needToChangeDirection(true) ? true : canChangePWM(d);
 
                 case Nonstop:
@@ -1489,6 +1487,12 @@ class Runner
             return _stop;
         }
 
+        int calcDelta()
+        {
+            int x = mover.getCurrentPWM();
+            return 0.05 * x + 2;
+        }
+        
         inline bool isIncreasePWM()
         {
             return _changePWM > 0;
@@ -1544,14 +1548,14 @@ class Runner
             int res;
             if (decreasing)
             {
-                res = delta;
+                res = calcDelta();
                 if (mover.getCurrentPWM() - res < Settings::getLowRealNonstopPWM())
                     res = mover.getCurrentPWM() - Settings::getLowRealNonstopPWM();
                 res = -res;
             }
             else
             {
-                res = delta;
+                res = calcDelta();
                 if (mover.getCurrentPWM() + res > Settings::getHighRealNonstopPWM())
                     res = Settings::getHighRealNonstopPWM() - mover.getCurrentPWM();
             }
