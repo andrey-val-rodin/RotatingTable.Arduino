@@ -4,13 +4,14 @@
 
 #define MOTOR 9
 #define DIRECTION 10
+#define MOTOR_POWER 4
 #define MOTOR_ENC1 2
 #define MOTOR_ENC2 3
 #define CAMERA 5
 #define SHUTTER 6
 #define CAMERA_LOW HIGH
 #define CAMERA_HIGH LOW
-#define MIN_PWM 70
+#define MIN_PWM 65
 #define MAX_PWM 120
 #define GRADUATIONS 4320 // number of graduations per turn
 #define DEGREE (GRADUATIONS / 360)
@@ -160,7 +161,7 @@ class Settings
 
         static uint16_t getExposure()
         {
-            return _exposure;
+            return validateExposure(_exposure);
         }
 
         static bool checkExposure(uint16_t value)
@@ -558,7 +559,6 @@ class Mover
         
         bool start()
         {
-return true;
             if (_started)
             {
                 // Everything is OK, table started
@@ -1870,12 +1870,13 @@ void setup()
     pinMode(MOTOR_ENC2, INPUT);
     pinMode(MOTOR, OUTPUT);
     pinMode(DIRECTION, OUTPUT);
+    pinMode(MOTOR_POWER, OUTPUT);
     pinMode(CAMERA, OUTPUT);
     pinMode(SHUTTER, OUTPUT);
     digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
     digitalWrite(CAMERA, CAMERA_LOW); // release camera
     analogWrite(MOTOR, 0);
-    
+    digitalWrite(MOTOR_POWER, HIGH);
     SetPinFrequencySafe(MOTOR, 24000);
 
     Serial.begin(115200);
