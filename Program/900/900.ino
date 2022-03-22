@@ -28,7 +28,7 @@ Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 EncButton<EB_TICK, 12, 13, 11> enc; // pins 11, 12, 13
 EncButton<EB_TICK, 7> photoButton;  // pin 7
-EncButton<EB_TICK, 4> nextButton;   // pin 4
+EncButton<EB_TICK, 8> nextButton;   // pin 8
 
 uint16_t EEMEM stepsOffset;
 unsigned char EEMEM accelerationOffset;
