@@ -13,8 +13,8 @@
 #define MOTOR_ENC2 3
 #define CAMERA 5
 #define SHUTTER 6
-#define CAMERA_LOW HIGH
-#define CAMERA_HIGH LOW
+#define CAMERA_LOW LOW
+#define CAMERA_HIGH HIGH
 #define MIN_PWM 60
 #define MAX_PWM 255
 #define GRADUATIONS 4320 // number of graduations per turn
@@ -26,9 +26,9 @@
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-EncButton<EB_TICK, 12, 13, 11> enc; // pins 11, 12, 13
+EncButton<EB_TICK, 13, 12, 11> enc; // pins 11, 12, 13
 EncButton<EB_TICK, 7> photoButton;  // pin 7
-EncButton<EB_TICK, 4> nextButton;   // pin 4
+EncButton<EB_TICK, 8> nextButton;   // pin 8
 
 uint16_t EEMEM stepsOffset;
 unsigned char EEMEM accelerationOffset;
@@ -147,9 +147,14 @@ class Settings
             return validateSteps(eeprom_read_word(&stepsOffset));
         }
 
+        static bool checkSteps(uint16_t value)
+        {
+            return FindInSteps(value) >= 0;
+        }
+
         static uint16_t validateSteps(uint16_t value)
         {
-            return FindInSteps(value) >= 0
+            return checkSteps(value)
                 ? value
                 : 24; // use default
         }
@@ -178,9 +183,14 @@ class Settings
             return result; // value in range from 80 to 440 when GRADUATIONS = 4320
         }
 
+        static bool checkAcceleration(unsigned char value)
+        {
+            return 1 <= value && value <= 10;
+        }
+
         static unsigned char validateAcceleration(unsigned char value)
         {
-            return 1 <= value && value <= 10
+            return checkAcceleration(value)
                 ? value
                 : 7; // use default
         }
@@ -195,9 +205,14 @@ class Settings
             return validateDelay(eeprom_read_word(&delayOffset));
         }
 
+        static bool checkDelay(uint16_t value)
+        {
+            return value <= 5000 && value % 100 == 0;
+        }
+
         static uint16_t validateDelay(uint16_t value)
         {
-            return value <= 5000 && value % 100 == 0
+            return checkDelay(value)
                 ? value
                 : 0; // use default
         }
@@ -212,9 +227,14 @@ class Settings
             return validateExposure(eeprom_read_word(&exposureOffset));
         }
 
+        static bool checkExposure(uint16_t value)
+        {
+            return 100 <= value && value <= 500 && value % 100 == 0;
+        }
+
         static uint16_t validateExposure(uint16_t value)
         {
-            return 100 <= value && value <= 500 && value % 100 == 0
+            return checkExposure(value)
                 ? value
                 : 100; // use default
         }
@@ -229,13 +249,18 @@ class Settings
             return validateVideoPWM(eeprom_read_word(&videoPWMOffset));
         }
 
-        static int16_t validateVideoPWM(int16_t value)
+        static bool checkVideoPWM(int16_t value)
         {
             return 
                 (-MAX_PWM <= value && value <= -MIN_PWM) ||
-                ( MIN_PWM <= value && value <=  MAX_PWM)
-                    ? value
-                    : 100; // use default
+                ( MIN_PWM <= value && value <=  MAX_PWM);
+        }
+
+        static int16_t validateVideoPWM(int16_t value)
+        {
+            return checkVideoPWM(value)
+                ? value
+                : 100; // use default
         }
 
         static void setVideoPWM(int16_t value)
@@ -248,9 +273,14 @@ class Settings
             return validateNonstopFrequency(eeprom_read_float(&nonstopFrequencyOffset));
         }
 
+        static bool checkNonstopFrequency(float value)
+        {
+            return lowNonstopFrequency <= value && value <= highNonstopFrequency;
+        }
+
         static float validateNonstopFrequency(float value)
         {
-            return lowNonstopFrequency <= value && value <= highNonstopFrequency
+            return checkNonstopFrequency(value)
                 ? value
                 : lowNonstopFrequency; // use default
         }
@@ -1581,6 +1611,7 @@ void setup()
     lcd.clear();
     lcd.backlight();
 
+    enc.setButtonLevel(HIGH);
     photoButton.setButtonLevel(HIGH);
     nextButton.setButtonLevel(HIGH);
 
