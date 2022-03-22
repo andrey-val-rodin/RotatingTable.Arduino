@@ -160,7 +160,7 @@ class Settings
 
         static uint16_t getExposure()
         {
-            return _exposure;
+            return validateExposure(_exposure);
         }
 
         static bool checkExposure(uint16_t value)
