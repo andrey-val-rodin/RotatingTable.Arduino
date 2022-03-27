@@ -15,7 +15,7 @@
 #define SHUTTER 6
 #define CAMERA_LOW LOW
 #define CAMERA_HIGH HIGH
-#define MIN_PWM 60
+#define MIN_PWM 65
 #define MAX_PWM 255
 #define GRADUATIONS 4320 // number of graduations per turn
 #define DEGREE (GRADUATIONS / 360)
@@ -360,32 +360,33 @@ class Settings
     private:
         static float getTimeOfTurn(unsigned char pwm)
         {
-            static const unsigned char buff[] =
+            static const unsigned char buff[] = 
             {
-                73, 69, 63, 60, 56, 52, 49, 46, 44, 41, 39, 38, 36, 35, 34, 32, 31, 30, 29, 28, 27, 26,
-                25, 25, 24, 24, 24, 24, 23, 23, 22, 22, 22, 21, 21, 20, 20, 20, 19, 19, 19, 19, 18, 18,
-                18, 18, 17, 17, 17, 17, 17, 16, 16, 16, 16, 16, 16, 15, 15, 15, 15, 15, 15
+                173, 157, 142, 130, 120, 112, 104, 97, 92, 88, 82, 78, 74, 71, 68, 65, 62, 60, 58, 56, 54, 53, 51,
+                50, 49, 48, 46, 45, 44, 44, 43, 42, 41, 40, 40, 39, 38, 38, 37, 37, 36, 36, 35, 34, 34, 34, 33, 33,
+                33, 32, 32, 31, 31, 31, 30, 30, 30, 29, 29, 29, 28, 28, 28, 28, 27, 27, 27, 27, 26, 26, 26, 25, 25,
+                25, 25, 25, 25, 24, 24, 24, 24, 23, 23, 23, 23, 22, 22, 22, 22, 21, 21, 21, 21, 21, 21, 20, 20, 20, 20
             };
             
             int index = pwm - MIN_PWM;
-            if (index < 63)
+            if (index < 99)
                 return buff[index];
-            else if (index < 72)
+            else if (index < 105)
+                return 19;
+            else if (index < 114)
+                return 18;
+            else if (index < 119)
+                return 17;
+            else if (index < 126)
+                return 16;
+            else if (index < 137)
+                return 15;
+            else if (index < 140)
                 return 14;
-            else if (index < 81)
+            else if (index < 149)
                 return 13;
-            else if (index < 90)
-                return 12;
-            else if (index < 101)
-                return 11;
-            else if (index < 112)
-                return 10;
-            else if (index < 124)
-                return 9;
-            else if (index < 138)
-                return 8;
             else
-                return 7;
+                return 12;
         }
 
         static float getPWMOfTurn(float time)

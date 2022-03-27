@@ -19,7 +19,7 @@ const int delta = 1;
 
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
-EncButton<EB_TICK, 12, 13, 11> enc; // pins 11, 12, 13
+EncButton<EB_TICK, 13, 12, 11> enc; // pins 11, 12, 13
 
 class PWMValidator
 {
@@ -598,6 +598,7 @@ void setup()
     pinMode(MOTOR_ENC2, INPUT);
     pinMode(MOTOR1, OUTPUT);
     pinMode(MOTOR2, OUTPUT);
+    enc.setButtonLevel(HIGH);
 
     Serial.begin(9600);
 }

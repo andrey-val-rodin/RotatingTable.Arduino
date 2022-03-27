@@ -74,14 +74,14 @@ class Runner
         };
         
         static void finalize();
-        static void display(String top, String stepName);
+        static void display(const char* top, const char* stepName);
 };
 Runner runner;
 
 struct MenuItem
 {
-    String top;
-    String bottom;
+    char top[17];
+    char bottom[17];
 };
 
 typedef void (*callback_t)();
@@ -360,33 +360,42 @@ class Settings
     private:
         static float getTimeOfTurn(unsigned char pwm)
         {
-            static const unsigned char buff[] = 
+          
+            static const unsigned char buff[] =
             {
-                173, 157, 142, 130, 120, 112, 104, 97, 92, 88, 82, 78, 74, 71, 68, 65, 62, 60, 58, 56, 54, 53, 51,
-                50, 49, 48, 46, 45, 44, 44, 43, 42, 41, 40, 40, 39, 38, 38, 37, 37, 36, 36, 35, 34, 34, 34, 33, 33,
-                33, 32, 32, 31, 31, 31, 30, 30, 30, 29, 29, 29, 28, 28, 28, 28, 27, 27, 27, 27, 26, 26, 26, 25, 25,
-                25, 25, 25, 25, 24, 24, 24, 24, 23, 23, 23, 23, 22, 22, 22, 22, 21, 21, 21, 21, 21, 21, 20, 20, 20, 20
+                82, 76, 71, 66, 63, 59, 56, 54, 52, 50, 48, 46, 44, 43, 42, 40, 39, 38, 37, 36, 35, 34, 34, 33, 32, 32, 31, 31,
+                30, 30, 29, 29, 28, 28, 28, 27, 27, 26, 26, 26, 25, 25, 25, 25, 24, 24, 24, 23, 23, 23, 23, 23, 22, 22, 22, 22
             };
             
             int index = pwm - MIN_PWM;
-            if (index < 99)
+            if (index < 56)
                 return buff[index];
-            else if (index < 105)
+            else if (index < 61)
+                return 21;
+            else if (index < 67)
+                return 20;
+            else if (index < 73)
                 return 19;
-            else if (index < 114)
+            else if (index < 79)
                 return 18;
-            else if (index < 119)
+            else if (index < 86)
                 return 17;
-            else if (index < 126)
+            else if (index < 92)
                 return 16;
-            else if (index < 137)
+            else if (index < 101)
                 return 15;
-            else if (index < 140)
+            else if (index < 110)
                 return 14;
-            else if (index < 149)
+            else if (index < 118)
                 return 13;
-            else
+            else if (index < 128)
                 return 12;
+            else if (index < 136)
+                return 11;
+            else if (index < 155)
+                return 10;
+            else
+                return 9;
         }
 
         static float getPWMOfTurn(float time)
@@ -447,39 +456,39 @@ class Menu
 
         void display()
         {
-            String top;
+            const char* top;
             unsigned char index = (unsigned char) current;
             switch (_mode)
             {
                 case MenuItems:
                     top = _items[index].top;
-                    if (top.startsWith("%"))
+                    if (top != NULL && top[0] == '%')
                         top = formatSteps(top);
                     printTop(top);
                     printBottom(_items[index].bottom);
                     break;
 
                 case Array:
-                    printTop(String(_array[index], DEC));
+                    printTop(String(_array[index]).c_str());
                     printBottom("");
                     break;
                 
                 case Range:
-                    printTop(String((current + _offset) * _multiplier, DEC));
+                    printTop(String((current + _offset) * _multiplier).c_str());
                     printBottom("");
                     break;
             }
         }
 
-        String formatSteps(String top)
+        const char* formatSteps(const char* top)
         {
-            top.remove(0, 1); // remove % sign
-            char strBuf[20];
-            sprintf(strBuf, "%s (%d)", top.c_str(), Settings::getSteps());
+            top += 1; // remove % sign
+            static char strBuf[20];
+            sprintf(strBuf, "%s (%d)", top, Settings::getSteps());
             return strBuf;
         }
         
-        void display(String top, String bottom)
+        void display(const char* top, const char* bottom)
         {
             printTop(top);
             printBottom(bottom);
@@ -512,35 +521,35 @@ class Menu
         unsigned char _offset;
         unsigned char _multiplier;
         
-        String _recentTop;
-        String _recentBottom;
+        char _recentTop[17];
+        char _recentBottom[17];
 
-        void printTop(String text)
+        void printTop(const char* text)
         {
-            if (_recentTop != text)
+            if (strcmp(_recentTop, text) != 0)
             {
-                _recentTop = text;
+                strcpy(_recentTop, text);
                 lcd.setCursor(0, 0);
                 lcd.print(text);
 
                 // Clear rest of space
-                for (int i = text.length(); i <= 16; i++)
+                for (int i = strlen(text); i <= 16; i++)
                 {
                     lcd.print(' ');
                 }
             }
         }
 
-        void printBottom(String text)
+        void printBottom(const char* text)
         {
-            if (_recentBottom != text)
+            if (strcmp(_recentBottom, text) != 0)
             {
-                _recentBottom = text;
+                strcpy(_recentBottom, text);
                 lcd.setCursor(0, 1);
                 lcd.print(text);
 
                 // Clear rest of space
-                for (int i = text.length(); i <= 16; i++)
+                for (int i = strlen(text); i <= 16; i++)
                 {
                     lcd.print(' ');
                 }
@@ -1150,10 +1159,10 @@ class Selector
 
         void updateSettings()
         {
-            MenuItemsDef::settingsItems[0].bottom = String(Settings::getSteps(), DEC);
-            MenuItemsDef::settingsItems[1].bottom = String(Settings::getAcceleration(), DEC);
-            MenuItemsDef::settingsItems[2].bottom = String(Settings::getDelay(), DEC);
-            MenuItemsDef::settingsItems[3].bottom = String(Settings::getExposure(), DEC);
+            strcpy(MenuItemsDef::settingsItems[0].bottom, String(Settings::getSteps()).c_str());
+            strcpy(MenuItemsDef::settingsItems[1].bottom, String(Settings::getAcceleration()).c_str());
+            strcpy(MenuItemsDef::settingsItems[2].bottom, String(Settings::getDelay()).c_str());
+            strcpy(MenuItemsDef::settingsItems[3].bottom, String(Settings::getExposure()).c_str());;
         }
 };
 Selector selector;
@@ -1163,8 +1172,8 @@ unsigned long timer = 0;
 bool isRunning = false;
 void Runner::runAutomatic()
 {
-    const String mode = "Auto...";
-    const String stepName = "photo";
+    const char* mode = "Auto...";
+    const char* stepName = "photo";
     static State currentState;
     static int32_t lastGraduations;
 #ifdef DEBUG_MODE
@@ -1256,8 +1265,8 @@ void Runner::runAutomatic()
 
 void Runner::runManual()
 {
-    const String mode = "Manual...";
-    const String stepName = "step";
+    const char* mode = "Manual...";
+    const char* stepName = "step";
     static State currentState;
     static bool needToMove;
     static int32_t lastGraduations;
@@ -1353,8 +1362,8 @@ void Runner::runManual()
 
 void Runner::runNonstop()
 {
-    const String mode = "Nonstop...";
-    const String stepName = "photo";
+    const char* mode = "Nonstop...";
+    const char* stepName = "photo";
     static State currentState;
     static int nextSnapshotPos;
     static bool needToStoreNewPWM;
@@ -1589,10 +1598,10 @@ void Runner::finalize()
     enc.resetState(); // reset encoder
 }
 
-void Runner::display(String top, String stepName)
+void Runner::display(const char* top, const char* stepName)
 {
     char strBuf[20];
-    sprintf(strBuf, "%s %d (%d)", stepName.c_str(), stepNumber, Settings::getSteps());
+    sprintf(strBuf, "%s %d (%d)", stepName, stepNumber, Settings::getSteps());
     selector.menu.display(top, strBuf);
 }
 
