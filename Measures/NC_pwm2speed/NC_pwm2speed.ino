@@ -11,7 +11,7 @@
 #define MOTOR_POWER 4
 #define MOTOR_ENC1 2
 #define MOTOR_ENC2 3
-#define MAX_PWM 120
+#define MAX_PWM 100
 #define GRADUATIONS 4320 // number of graduations per turn
 #define DEGREE (GRADUATIONS / 360)
 
@@ -55,7 +55,7 @@ class Settings
             result += 10;
             result *= DEGREE;
             result /= 3;
-            return result; // value in range from 80 to 440 when GRADUATIONS = 4320
+            return result + 150;
         }
 
         static int16_t getSteps()
@@ -703,7 +703,7 @@ class Worker
                 case 2:
                     Serial.println("24000 Гц");
                     SetPinFrequencySafe(MOTOR, 24000);
-                    MIN_PWM = 65;
+                    MIN_PWM = 71;
                     break;
 
                 default:
