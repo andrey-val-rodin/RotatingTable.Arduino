@@ -9,10 +9,10 @@
 #define MOTOR_ENC2 3
 #define CAMERA 5
 #define SHUTTER 6
-#define CAMERA_LOW HIGH
-#define CAMERA_HIGH LOW
+#define CAMERA_LOW LOW
+#define CAMERA_HIGH HIGH
 #define MIN_PWM 65
-#define MAX_PWM 120
+#define MAX_PWM 90
 #define GRADUATIONS 4320 // number of graduations per turn
 #define DEGREE (GRADUATIONS / 360)
 
@@ -289,30 +289,11 @@ class Settings
         {
             static const unsigned char buff[] =
             {
-                73, 69, 63, 60, 56, 52, 49, 46, 44, 41, 39, 38, 36, 35, 34, 32, 31, 30, 29, 28, 27, 26,
-                25, 25, 24, 24, 24, 24, 23, 23, 22, 22, 22, 21, 21, 20, 20, 20, 19, 19, 19, 19, 18, 18,
-                18, 18, 17, 17, 17, 17, 17, 16, 16, 16, 16, 16, 16, 15, 15, 15, 15, 15, 15
+                48, 37, 30, 25, 22, 19, 17, 16, 14, 13, 12, 12, 11, 10, 10, 9, 9, 8, 8, 8, 7, 7, 7, 7, 6, 6
             };
             
             int index = pwm - MIN_PWM;
-            if (index < 63)
-                return buff[index];
-            else if (index < 72)
-                return 14;
-            else if (index < 81)
-                return 13;
-            else if (index < 90)
-                return 12;
-            else if (index < 101)
-                return 11;
-            else if (index < 112)
-                return 10;
-            else if (index < 124)
-                return 9;
-            else if (index < 138)
-                return 8;
-            else
-                return 7;
+            return buff[index];
         }
 
         static float getPWMOfTurn(float time)
