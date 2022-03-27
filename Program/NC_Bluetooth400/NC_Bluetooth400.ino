@@ -117,7 +117,7 @@ class Settings
             result += 10;
             result *= DEGREE;
             result /= 3;
-            return result + 170; // value in range from 80 to 440 when GRADUATIONS = 4320
+            return result + 170; // value in range from 250 to 610 when GRADUATIONS = 4320
         }
 
         static bool checkAcceleration(unsigned char value)
@@ -1472,9 +1472,7 @@ class Runner
 
         int calcDelta()
         {
-return 1;
-            int x = mover.getCurrentPWM();
-            return 0.05 * x + 2;
+            return 1;
         }
         
         inline bool isIncreasePWM()

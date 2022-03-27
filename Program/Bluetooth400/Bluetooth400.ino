@@ -8,8 +8,8 @@
 #define MOTOR_ENC2 3
 #define CAMERA 5
 #define SHUTTER 6
-#define CAMERA_LOW HIGH
-#define CAMERA_HIGH LOW
+#define CAMERA_LOW LOW
+#define CAMERA_HIGH HIGH
 #define MIN_PWM 60
 #define MAX_PWM 255
 #define GRADUATIONS 4320 // number of graduations per turn
