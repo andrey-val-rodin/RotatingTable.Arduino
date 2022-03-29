@@ -49,13 +49,29 @@ class Settings
         // Note that real value shouldn't be less than 80 when GRADUATIONS = 4320.
         static uint16_t getRealAcceleration()
         {
-            int result = getAcceleration();
-            result = abs(result - 11); // reverse
-            result *= 10;
-            result += 10;
-            result *= DEGREE;
-            result /= 3;
-            return result + 150;
+            switch(getAcceleration())
+            {
+                case 1:
+                    return 550;
+                case 2:
+                    return 500;
+                case 3:
+                    return 450;
+                case 4:
+                    return 400;
+                case 5:
+                    return 350;
+                case 6:
+                    return 300;
+                case 7:
+                    return 250;
+                case 8:
+                    return 200;
+                case 9:
+                    return 150;
+                default:
+                    return 100;
+            }
         }
 
         static int16_t getSteps()
@@ -703,7 +719,7 @@ class Worker
                 case 2:
                     Serial.println("24000 Гц");
                     SetPinFrequencySafe(MOTOR, 24000);
-                    MIN_PWM = 71;
+                    MIN_PWM = 65;
                     break;
 
                 default:

@@ -260,7 +260,7 @@ class Settings
         {
             return checkVideoPWM(value)
                 ? value
-                : 100; // use default
+                : 80; // use default
         }
 
         static void setVideoPWM(int16_t value)

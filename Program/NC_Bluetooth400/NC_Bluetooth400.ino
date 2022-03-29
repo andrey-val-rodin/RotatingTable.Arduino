@@ -12,7 +12,7 @@
 #define CAMERA_LOW LOW
 #define CAMERA_HIGH HIGH
 #define MIN_PWM 65
-#define MAX_PWM 90
+#define MAX_PWM 100
 #define GRADUATIONS 4320 // number of graduations per turn
 #define DEGREE (GRADUATIONS / 360)
 
@@ -108,16 +108,31 @@ class Settings
 
         // Returns number of graduations for acceleration and deceleration from min to max PWM and vice versa.
         // Function converts current user-friendly value 1-10 to this value.
-        // Note that real value shouldn't be less than 80 when GRADUATIONS = 4320.
         static uint16_t getRealAcceleration()
         {
-            int result = getAcceleration();
-            result = abs(result - 11); // reverse
-            result *= 10;
-            result += 10;
-            result *= DEGREE;
-            result /= 3;
-            return result + 170; // value in range from 250 to 610 when GRADUATIONS = 4320
+            switch(getAcceleration())
+            {
+                case 1:
+                    return 550;
+                case 2:
+                    return 500;
+                case 3:
+                    return 450;
+                case 4:
+                    return 400;
+                case 5:
+                    return 350;
+                case 6:
+                    return 300;
+                case 7:
+                    return 250;
+                case 8:
+                    return 200;
+                case 9:
+                    return 150;
+                default:
+                    return 100;
+            }
         }
 
         static bool checkAcceleration(unsigned char value)
@@ -197,7 +212,7 @@ class Settings
         {
             return checkVideoPWM(value)
                 ? value
-                : 100; // use default
+                : 80; // use default
         }
 
         static void setVideoPWM(int16_t value)
@@ -289,11 +304,22 @@ class Settings
         {
             static const unsigned char buff[] =
             {
-                48, 37, 30, 25, 22, 19, 17, 16, 14, 13, 12, 12, 11, 10, 10, 9, 9, 8, 8, 8, 7, 7, 7, 7, 6, 6
+                47, 36, 29, 25, 22, 19, 17, 16, 14, 13, 12, 12, 11, 10, 10
             };
             
             int index = pwm - MIN_PWM;
-            return buff[index];
+            if (index < 15)
+                return buff[index];
+            else if (index < 18)
+                return 9;
+            else if (index < 21)
+                return 8;
+            else if (index < 25)
+                return 7;
+            else if (index < 31)
+                return 6;
+            else
+                return 5;
         }
 
         static float getPWMOfTurn(float time)
