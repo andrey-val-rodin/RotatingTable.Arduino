@@ -840,7 +840,7 @@ class Runner
 
             if (!mover.isStopped())
             {
-                if (millis() - _timer2 >= 50)
+                if (mover.getState() != Mover::Correction && millis() - _timer2 >= 50)
                 {
                     _currentAngle = mover.getLatestPos() / DEGREE;
                     if (_currentAngle != _oldAngle)
@@ -955,7 +955,7 @@ class Runner
 
             if (!mover.isStopped())
             {
-                if (millis() - _timer2 >= 50)
+                if (mover.getState() != Mover::Correction && millis() - _timer2 >= 50)
                 {
                     _currentAngle = mover.getLatestPos() / DEGREE;
                     if (_currentAngle != _oldAngle)
@@ -1067,7 +1067,7 @@ class Runner
             }
             else if (!mover.isStopped())
             {
-                if (millis() - _timer2 >= 50)
+                if (mover.getState() != Mover::Correction && millis() - _timer2 >= 50)
                 {
                     _currentAngle = mover.getLatestPos() / DEGREE;
                     if (_currentAngle != _oldAngle)
@@ -1215,7 +1215,7 @@ class Runner
             }
             else
             {
-                if (millis() - _timer >= 50)
+                if (mover.getState() != Mover::Correction && millis() - _timer >= 50)
                 {
                     _currentAngle = mover.getAbsolutePos() / DEGREE;
                     if (_currentAngle != _oldAngle)
@@ -1288,7 +1288,7 @@ class Runner
             }
             else
             {
-                if (millis() - _timer2 >= 50)
+                if (mover.getState() != Mover::Correction && millis() - _timer2 >= 50)
                 {
                     _currentAngle = mover.getLatestPos() / DEGREE;
                     if (_currentAngle != _oldAngle)
