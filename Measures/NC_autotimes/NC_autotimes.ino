@@ -1094,6 +1094,7 @@ void setup()
     Serial.begin(115200);
 }
 
+static bool first = true;
 void loop()
 {
     enc.tick();
@@ -1103,7 +1104,9 @@ void loop()
     worker.tick();
 
  //   if (enc.press())
+    if (first)
     {
+        first = false;
         if (worker.getState() == Waiting)
             worker.start();
 //        else

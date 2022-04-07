@@ -304,7 +304,7 @@ class Settings
         {
             static const unsigned char buff[] =
             {
-                47, 36, 29, 25, 22, 19, 17, 16, 14, 13, 12, 12, 11, 10, 10
+                64, 43, 34, 28, 24, 21, 18, 17, 15, 14, 13, 12, 11, 11, 10
             };
             
             int index = pwm - MIN_PWM;

@@ -308,18 +308,14 @@ class Mover
             if (millis() - _startTimer2 >= _startDelay)
             {
                 int limit = calcHighLimitOfMinPWM();
-#ifdef DEBUG_MODE
                 Serial.println("High limit of _minPWM: " + String(limit));
-#endif
                 if (_minPWM >= limit)
                 {
                     // Unable to increase _minPWM
                     // Wait a second, and if table is still not moving, stop it
                     if (millis() - _startTimer >= 1000)
                     {
-#ifdef DEBUG_MODE
                         Serial.println("Unable to start, stopping...");
-#endif
                         stop();
                     }
     
@@ -333,9 +329,7 @@ class Mover
                     _minPWM = limit;
                 _currentPWM = _minPWM;
                 analogWrite(MOTOR, _currentPWM);
-#ifdef DEBUG_MODE
                 Serial.println("Increase PWM. New value: " + String(_minPWM));
-#endif
             }
 
             return false;
@@ -719,7 +713,7 @@ class Worker
                 case 2:
                     Serial.println("24000 Гц");
                     SetPinFrequencySafe(MOTOR, 24000);
-                    MIN_PWM = 65;
+                    MIN_PWM = 64;
                     break;
 
                 default:
@@ -752,11 +746,11 @@ void loop()
     mover.tick();
     worker.tick();
 
-    if (enc.press())
+ //   if (enc.press())
     {
         if (worker.getStage() == 0)
             worker.start(2);
-        else
-            worker.cancel();
+//        else
+//            worker.cancel();
     }
 }
