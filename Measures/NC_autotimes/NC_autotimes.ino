@@ -16,7 +16,7 @@
 #define SHUTTER 6
 #define CAMERA_LOW HIGH
 #define CAMERA_HIGH LOW
-#define MIN_PWM 63
+#define MIN_PWM 64
 #define MAX_PWM 100
 #define GRADUATIONS 4320 // number of graduations per turn
 #define DEGREE (GRADUATIONS / 360)
@@ -120,7 +120,19 @@ class Settings
     public:
         static uint16_t getSteps()
         {
-            return _steps;
+            return validateSteps(_steps);
+        }
+
+        static bool checkSteps(uint16_t value)
+        {
+            return FindInSteps(value) >= 0;
+        }
+
+        static uint16_t validateSteps(uint16_t value)
+        {
+            return checkSteps(value)
+                ? value
+                : 24; // use default
         }
 
         static void setSteps(uint16_t value)
@@ -130,21 +142,48 @@ class Settings
 
         static unsigned char getAcceleration()
         {
-            return _acceleration;
+            return validateAcceleration(_acceleration);
         }
 
         // Returns number of graduations for acceleration and deceleration from min to max PWM and vice versa.
         // Function converts current user-friendly value 1-10 to this value.
-        // Note that real value shouldn't be less than 80 when GRADUATIONS = 4320.
         static uint16_t getRealAcceleration()
         {
-            int result = getAcceleration();
-            result = abs(result - 11); // reverse
-            result *= 10;
-            result += 10;
-            result *= DEGREE;
-            result /= 3;
-            return result; // value in range from 80 to 440 when GRADUATIONS = 4320
+            switch(getAcceleration())
+            {
+                case 1:
+                    return 550;
+                case 2:
+                    return 500;
+                case 3:
+                    return 450;
+                case 4:
+                    return 400;
+                case 5:
+                    return 350;
+                case 6:
+                    return 300;
+                case 7:
+                    return 250;
+                case 8:
+                    return 200;
+                case 9:
+                    return 150;
+                default:
+                    return 100;
+            }
+        }
+
+        static bool checkAcceleration(unsigned char value)
+        {
+            return 1 <= value && value <= 10;
+        }
+
+        static unsigned char validateAcceleration(unsigned char value)
+        {
+            return checkAcceleration(value)
+                ? value
+                : 7; // use default
         }
 
         static void setAcceleration(unsigned char value)
