@@ -674,7 +674,7 @@ class Mover
             _cumulativePos -= encoder.readAndReset();
             _acceleration = Settings::getAcceleration();
             _realAcceleration = Settings::getRealAcceleration();
-            _startTimer = millis();
+            _startTimer2 = _startTimer = millis();
             _startDelay = 100;
             _started = false;
             _state = Move;
@@ -694,7 +694,7 @@ class Mover
             _cumulativePos -= encoder.readAndReset();
             _acceleration = Settings::getAcceleration();
             _realAcceleration = Settings::getRealAcceleration();
-            _startTimer = millis();
+            _startTimer2 = _startTimer = millis();
             _startDelay = 100;
             _started = false;
             _state = RunAcc;
@@ -823,6 +823,7 @@ class Mover
         int _currentPWM;
         unsigned long _timer;
         unsigned long _startTimer;
+        unsigned long _startTimer2;
         uint16_t _startDelay;
         bool _started;
         unsigned char _timePartCount;
@@ -844,7 +845,7 @@ class Mover
                 return true;
             }
 
-            if (millis() - _startTimer >= _startDelay)
+            if (millis() - _startTimer2 >= _startDelay)
             {
                 int limit = calcHighLimitOfMinPWM();
 #ifdef DEBUG_MODE
@@ -853,11 +854,19 @@ class Mover
                 if (_minPWM >= limit)
                 {
                     // Unable to increase _minPWM anymore
+                    // If correction, wait a second, and if table is still not moving, stop it
+                    if (_state == Correction && millis() - _startTimer >= 1000)
+                    {
+#ifdef DEBUG_MODE
+                        Serial.println("Unable to start, stopping...");
+#endif
+                        stop();
+                    }
                     return false;
                 }
 
                 _startDelay = _startDelay / 1.5;
-                _startTimer = millis();
+                _startTimer2 = millis();
                 _minPWM += 5;
                 if (_minPWM > limit)
                     _minPWM = limit;
