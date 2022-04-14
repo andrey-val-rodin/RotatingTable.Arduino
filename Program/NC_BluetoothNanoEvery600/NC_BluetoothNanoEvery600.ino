@@ -39,13 +39,19 @@ void Write(const char* text)
     char strBuf[64];
     sprintf(strBuf, "%s%c", text, terminator);
     Serial1.write(strBuf, strlen(strBuf));
+#ifdef DEBUG_MODE
+    Serial.write(strBuf, strlen(strBuf));
+#endif
 }
 
 void Write(const char* text, int arg)
 {
     char strBuf[64];
     sprintf(strBuf, "%s%d%c", text, arg, terminator);
-    Serial1.write(strBuf);
+    Serial1.write(strBuf, strlen(strBuf));
+#ifdef DEBUG_MODE
+    Serial.write(strBuf, strlen(strBuf));
+#endif
 }
 
 void Write(const String& text)
@@ -1601,9 +1607,9 @@ class Listener
 */
         void tick()
         {
-            if (Serial1.available())
+            String command = read();
+            if (command != "")
             {
-                String command = Serial1.readStringUntil(terminator);
                 if (command == "STATUS")
                 {
                     if (runner.isRunning())
@@ -1851,6 +1857,26 @@ class Listener
                     Write("UNDEF:" + command);
                 }
             }
+        }
+
+    private:
+        String read()
+        {
+            String result;
+            if (Serial1.available())
+            {
+                result = Serial1.readStringUntil(terminator);
+            }
+
+#ifdef DEBUG_MODE
+            if (result == "")
+            if (Serial.available())
+            {
+                result = Serial.readStringUntil(terminator);
+            }
+#endif
+            
+            return result;
         }
 };
 Listener listener;
