@@ -1613,19 +1613,7 @@ class Listener
             BLEDevice central = BLE.central();
             if (central && central.connected())
             {
-                String command = "";
-                if (writeCharacteristic.valueUpdated())
-                {
-                    char buff[32];
-                    if (writeCharacteristic.readValue(buff, 32) == 0)
-                        return;
-
-                    if (buff[strlen(buff) - 1] == terminator)
-                        buff[strlen(buff) - 1] = 0;
-
-                    command = buff;
-                }
-
+                String command = read();
                 if (command == "")
                     return;
                 
@@ -1876,6 +1864,24 @@ class Listener
                     Write("UNDEF:" + command);
                 }
             }
+        }
+    private:
+        String read()
+        {
+            String result = "";
+            if (writeCharacteristic.valueUpdated())
+            {
+                char buff[32];
+                if (writeCharacteristic.readValue(buff, 32) == 0)
+                    return result;
+
+                if (buff[strlen(buff) - 1] == terminator)
+                    buff[strlen(buff) - 1] = 0;
+
+                result = buff;
+            }
+
+            return result;
         }
 };
 Listener listener;

@@ -1539,7 +1539,7 @@ class Runner
 
         bool needToChangeDirection(bool decreasing)
         {
-            char direction = mover.isForward() ? 1 : -1;
+            signed char direction = mover.isForward() ? 1 : -1;
             if (decreasing)
             {
                 if (direction > 0 && mover.getCurrentPWM() <= MIN_PWM)
