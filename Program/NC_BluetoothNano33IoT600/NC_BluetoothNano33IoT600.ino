@@ -11,8 +11,8 @@
 #define SHUTTER 6
 #define CAMERA_LOW LOW
 #define CAMERA_HIGH HIGH
-#define MIN_PWM 72
-#define MAX_PWM 100
+#define MIN_PWM 110
+#define MAX_PWM 200
 #define GRADUATIONS 4320 // number of graduations per turn
 #define DEGREE (GRADUATIONS / 360)
 
@@ -23,8 +23,8 @@ const char* uuidOfService             = "0000ffe0-0000-1000-8000-00805f9b34fb";
 const char* updatesCharacteristicUuid = "0000ffe1-0000-1000-8000-00805f9b34fb";
 const char* writeCharacteristicUuid   = "0000ffe2-0000-1000-8000-00805f9b34fb";
 BLEService service(uuidOfService); // Bluetooth® Low Energy Service
-BLECharacteristic updatesCharacteristic(updatesCharacteristicUuid, BLENotify, 32, true);
-BLECharacteristic writeCharacteristic(writeCharacteristicUuid, BLEWrite, 32, true);
+BLECharacteristic updatesCharacteristic(updatesCharacteristicUuid, BLENotify, 32, false);
+BLECharacteristic writeCharacteristic(writeCharacteristicUuid, BLEWrite, 32, false);
 
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
@@ -47,6 +47,9 @@ void Write(const char* text)
 {
     char strBuf[64];
     sprintf(strBuf, "%s%c", text, terminator);
+#ifdef DEBUG_MODE
+    Serial.println(strBuf);
+#endif
     updatesCharacteristic.writeValue(strBuf, strlen(strBuf));
 }
 
@@ -54,6 +57,9 @@ void Write(const char* text, int arg)
 {
     char strBuf[64];
     sprintf(strBuf, "%s%d%c", text, arg, terminator);
+#ifdef DEBUG_MODE
+    Serial.println(strBuf);
+#endif
     updatesCharacteristic.writeValue(strBuf, strlen(strBuf));
 }
 
@@ -612,7 +618,7 @@ class Mover
 
         int calcHighLimitOfMinPWM()
         {
-            const int highestLimit = 100;
+            const int highestLimit = 200;
             
             switch (_state)
             {
@@ -1617,6 +1623,9 @@ class Listener
                 if (command == "")
                     return;
                 
+#ifdef DEBUG_MODE
+                Serial.println("Command: " + command);
+#endif
                 if (command == "STATUS")
                 {
                     if (runner.isRunning())
@@ -1706,6 +1715,8 @@ class Listener
                     }
                     else if (command.startsWith("VPWM"))
                     {
+Write("OK");
+return;
                         command.replace("VPWM ", "");
                         int16_t value = command.toInt();
                         if (Settings::checkVideoPWM(value))
@@ -1869,14 +1880,20 @@ class Listener
         String read()
         {
             String result = "";
-            if (writeCharacteristic.valueUpdated())
+            if (writeCharacteristic.written())
             {
                 char buff[32];
                 if (writeCharacteristic.readValue(buff, 32) == 0)
                     return result;
 
-                if (buff[strlen(buff) - 1] == terminator)
-                    buff[strlen(buff) - 1] = 0;
+                for (byte i = 0; i < 32; i++)
+                {
+                    if (buff[i] == terminator)
+                    {
+                        buff[i] = '\0';
+                        break;
+                    }
+                }
 
                 result = buff;
             }
@@ -1888,8 +1905,6 @@ Listener listener;
 
 void setup()
 {
-    pinMode(MOTOR_ENC1, INPUT);
-    pinMode(MOTOR_ENC2, INPUT);
     pinMode(MOTOR, OUTPUT);
     pinMode(DIRECTION, OUTPUT);
     pinMode(MOTOR_POWER, OUTPUT);
@@ -1899,7 +1914,6 @@ void setup()
     digitalWrite(CAMERA, CAMERA_LOW); // release camera
     analogWrite(MOTOR, 0);
     digitalWrite(MOTOR_POWER, HIGH);
-
 #ifdef DEBUG_MODE
     Serial.begin(9600);
 #endif
