@@ -23,8 +23,8 @@ const char* uuidOfService             = "0000ffe0-0000-1000-8000-00805f9b34fb";
 const char* updatesCharacteristicUuid = "0000ffe1-0000-1000-8000-00805f9b34fb";
 const char* writeCharacteristicUuid   = "0000ffe2-0000-1000-8000-00805f9b34fb";
 BLEService service(uuidOfService); // Bluetooth® Low Energy Service
-BLECharacteristic updatesCharacteristic(updatesCharacteristicUuid, BLENotify, 32, false);
-BLECharacteristic writeCharacteristic(writeCharacteristicUuid, BLEWrite, 32, false);
+BLECharacteristic updatesCharacteristic(updatesCharacteristicUuid, BLENotify, 64, false);
+BLECharacteristic writeCharacteristic(writeCharacteristicUuid, BLEWrite, 64, false);
 
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
@@ -225,7 +225,7 @@ class Settings
         {
             return checkVideoPWM(value)
                 ? value
-                : 80; // use default
+                : MIN_PWM + 30; // use default
         }
 
         static void setVideoPWM(int16_t value)
@@ -1715,8 +1715,6 @@ class Listener
                     }
                     else if (command.startsWith("VPWM"))
                     {
-Write("OK");
-return;
                         command.replace("VPWM ", "");
                         int16_t value = command.toInt();
                         if (Settings::checkVideoPWM(value))
@@ -1726,7 +1724,9 @@ return;
                             Write(Settings::getVideoPWM() == value? "OK" : "ERR");
                         }
                         else
-                            Write("ERR");
+// temporarily
+Write("OK");
+//                            Write("ERR");
                     }
                     else if (command.startsWith("NFREQ"))
                     {
@@ -1882,11 +1882,11 @@ return;
             String result = "";
             if (writeCharacteristic.written())
             {
-                char buff[32];
-                if (writeCharacteristic.readValue(buff, 32) == 0)
+                char buff[64];
+                if (writeCharacteristic.readValue(buff, 64) == 0)
                     return result;
 
-                for (byte i = 0; i < 32; i++)
+                for (byte i = 0; i < 64; i++)
                 {
                     if (buff[i] == terminator)
                     {
