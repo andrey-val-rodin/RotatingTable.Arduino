@@ -1910,10 +1910,12 @@ void setup()
     pinMode(MOTOR_POWER, OUTPUT);
     pinMode(CAMERA, OUTPUT);
     pinMode(SHUTTER, OUTPUT);
+    
     digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
     digitalWrite(CAMERA, CAMERA_LOW); // release camera
     analogWrite(MOTOR, 0);
     digitalWrite(MOTOR_POWER, HIGH);
+    
 #ifdef DEBUG_MODE
     Serial.begin(9600);
 #endif
