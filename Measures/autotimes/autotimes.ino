@@ -1,11 +1,5 @@
 #define ENCODER_OPTIMIZE_INTERRUPTS
 #include <Encoder.h>
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-compare"
-#include <EncButton.h>
-#pragma GCC diagnostic pop
-#include <LiquidCrystal_I2C.h>
-#include <PWM.h>
 
 #define MOTOR1 10
 #define MOTOR2 9
@@ -15,17 +9,12 @@
 #define SHUTTER 6
 #define CAMERA_LOW HIGH
 #define CAMERA_HIGH LOW
-#define MIN_PWM 65
+#define MIN_PWM 60
 #define MAX_PWM 255
 #define GRADUATIONS 4320 // number of graduations per turn
 #define DEGREE (GRADUATIONS / 360)
 
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
-
-LiquidCrystal_I2C lcd(0x27, 16, 2);
-EncButton<EB_TICK, 12, 13, 11> enc; // pins 11, 12, 13
-EncButton<EB_TICK, 7> photoButton;  // pin 7
-EncButton<EB_TICK, 4> nextButton;   // pin 4
 
 const unsigned char stepsLength = 22;
 const uint16_t steps[stepsLength] =
@@ -119,7 +108,19 @@ class Settings
     public:
         static uint16_t getSteps()
         {
-            return _steps;
+            return validateSteps(_steps);
+        }
+
+        static bool checkSteps(uint16_t value)
+        {
+            return FindInSteps(value) >= 0;
+        }
+
+        static uint16_t validateSteps(uint16_t value)
+        {
+            return checkSteps(value)
+                ? value
+                : 24; // use default
         }
 
         static void setSteps(uint16_t value)
@@ -129,12 +130,11 @@ class Settings
 
         static unsigned char getAcceleration()
         {
-            return _acceleration;
+            return validateAcceleration(_acceleration);
         }
 
         // Returns number of graduations for acceleration and deceleration from min to max PWM and vice versa.
         // Function converts current user-friendly value 1-10 to this value.
-        // Note that real value shouldn't be less than 80 when GRADUATIONS = 4320.
         static uint16_t getRealAcceleration()
         {
             int result = getAcceleration();
@@ -144,6 +144,18 @@ class Settings
             result *= DEGREE;
             result /= 3;
             return result; // value in range from 80 to 440 when GRADUATIONS = 4320
+        }
+
+        static bool checkAcceleration(unsigned char value)
+        {
+            return 1 <= value && value <= 10;
+        }
+
+        static unsigned char validateAcceleration(unsigned char value)
+        {
+            return checkAcceleration(value)
+                ? value
+                : 7; // use default
         }
 
         static void setAcceleration(unsigned char value)
@@ -167,138 +179,6 @@ class Settings
 };
 uint16_t Settings::_steps;
 unsigned char Settings::_acceleration;
-
-class Menu
-{
-    public:
-        unsigned char current;
-
-        void setItems(const MenuItem* items, unsigned char length)
-        {
-            _items = items;
-            _length = length;
-            _mode = MenuItems;
-            current = 0;
-        }
-
-        void setItems(const uint16_t* items, unsigned char length)
-        {
-            _array = items;
-            _length = length;
-            _mode = Array;
-            current = 0;
-        }
-
-        void setItems(unsigned char upperBound, unsigned char multiplier, unsigned char offset)
-        {
-            _length = upperBound;
-            _offset = offset;
-            _multiplier = multiplier;
-            _mode = Range;
-            current = 0;
-        }
-
-        void display()
-        {
-            String top;
-            unsigned char index = (unsigned char) current;
-            switch (_mode)
-            {
-                case MenuItems:
-                    top = _items[index].top;
-                    if (top.startsWith("%"))
-                        top = formatSteps(top);
-                    printTop(top);
-                    printBottom(_items[index].bottom);
-                    break;
-
-                case Array:
-                    printTop(String(_array[index], DEC));
-                    printBottom("");
-                    break;
-                
-                case Range:
-                    printTop(String((current + _offset) * _multiplier, DEC));
-                    printBottom("");
-                    break;
-            }
-        }
-
-        String formatSteps(String top)
-        {
-            top.remove(0, 1); // remove % sign
-            char strBuf[20];
-            sprintf(strBuf, "%s (%d)", top.c_str(), Settings::getSteps());
-            return strBuf;
-        }
-        
-        void display(String top, String bottom)
-        {
-            printTop(top);
-            printBottom(bottom);
-        }
-
-        void next()
-        {
-            if (current < _length - 1)
-            	current++;
-        }
-
-        void prev()
-        {
-            if (current > 0)
-            	current--;
-        }
-
-    private:
-        enum Mode : char
-        {
-            MenuItems,
-            Array,
-            Range
-        };
-
-        Mode _mode;
-        const MenuItem* _items;
-        const uint16_t* _array;
-        unsigned char _length;
-        unsigned char _offset;
-        unsigned char _multiplier;
-        
-        String _recentTop;
-        String _recentBottom;
-
-        void printTop(String text)
-        {
-            if (_recentTop != text)
-            {
-                _recentTop = text;
-                lcd.setCursor(0, 0);
-                lcd.print(text);
-                // Clear rest of space
-                for (int i = text.length(); i <= 16; i++)
-                {
-                    lcd.print(' ');
-                }
-            }
-        }
-
-        void printBottom(String text)
-        {
-            if (_recentBottom != text)
-            {
-                _recentBottom = text;
-                lcd.setCursor(0, 1);
-                lcd.print(text);
-                // Clear rest of space
-                for (int i = text.length(); i <= 16; i++)
-                {
-                    lcd.print(' ');
-                }
-            }
-        }
-};
-Menu menu;
 
 class Mover
 {
@@ -348,9 +228,17 @@ class Mover
             _graduations = graduations;
             _forward = graduations > 0;
             _currentPWM = MIN_PWM;
+            _minPWM = MIN_PWM;
             _maxPWM = maxPWM;
             _cumulativePos -= encoder.readAndReset();
+            _acceleration = Settings::getAcceleration();
+            _realAcceleration = Settings::getRealAcceleration();
+            _startTimer2 = _startTimer = millis();
+            _startDelay = 100;
+            _started = false;
             _state = Move;
+
+            analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
         }
 
         void run(int pwm)
@@ -358,11 +246,19 @@ class Mover
             if (!isStopped())
                 return;
 
+            _minPWM = MIN_PWM;
             _maxPWM = abs(pwm);
             _forward = pwm > 0;
             _currentPWM = MIN_PWM;
             _cumulativePos -= encoder.readAndReset();
+            _acceleration = Settings::getAcceleration();
+            _realAcceleration = Settings::getRealAcceleration();
+            _startTimer2 = _startTimer = millis();
+            _startDelay = 100;
+            _started = false;
             _state = RunAcc;
+
+            analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
         }
 
         void stop()
@@ -377,7 +273,7 @@ class Mover
             if (_state == Run)
             {
                 // Calculate stop point
-                float decelerationLength = Settings::getRealAcceleration();
+                float decelerationLength = _realAcceleration;
                 float graduationsToStop = (_currentPWM - MIN_PWM) * decelerationLength /
                     (MAX_PWM - MIN_PWM);
                 if (!_forward)
@@ -414,28 +310,35 @@ class Mover
 
         void changePWM(int delta)
         {
-            switch (_state)
-            {
-                case Move:
-                    if (_currentPWM == _maxPWM)
-                    {
-                        _maxPWM += delta;
-                        _maxPWM = PWMValidator::validate(_maxPWM);
-                        _currentPWM = _maxPWM;
-                        analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
-                    }
-                    break;
-                    
-                case Run:
-                    _maxPWM += delta;
-                    _maxPWM = PWMValidator::validate(_maxPWM);
-                    _currentPWM = _maxPWM;
-                    analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
-                    break;
+            if (!canChangePWM(delta))
+                return;
+                
+            _maxPWM += delta;
+            _maxPWM = PWMValidator::validate(_maxPWM);
+            _currentPWM = _maxPWM;
+            analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
+        }
 
-                default:
-                    break;
-            }
+        bool canChangePWM(int delta)
+        {
+            // Changing is avalable only when state is Move or Run
+            if (_state != Move && _state != Run)
+                return false;
+
+            // Changing is not awailable at the time of acceleration/deceleration
+            if (!isUniformMotion())
+                return false;
+
+            int oldMaxPWM = _maxPWM;
+            int newMaxPWM = PWMValidator::validate(_maxPWM + delta);
+
+            // Return true if old _maxPWM will not be equal to the new one
+            return newMaxPWM != oldMaxPWM;
+        }
+
+        inline bool isUniformMotion()
+        {
+            return (_state == Move || _state == Run) && _currentPWM == _maxPWM;
         }
 
         // Returns current position in graduations. Can be negative
@@ -445,6 +348,13 @@ class Mover
             // Invert pos
             // clockwise movement is positive, counterclockwise movement is negative
             return -pos;
+        }
+
+        // Returns latest position obtained by Mover class.
+        // This function is "easy" and does not use encoder and therefore critical section. 
+        inline int32_t getLatestPos()
+        {
+            return _currentPos;
         }
 
         // Returns graduation count passed from starting point. Can be negative
@@ -464,17 +374,103 @@ class Mover
         State _state = Stop;
         int32_t _graduations;
         bool _forward;
-        int _maxPWM = MAX_PWM;
+        int _minPWM;
+        int _maxPWM;
         int32_t _currentPos;
         int32_t _lastPos;
         int32_t _cumulativePos;
         int _currentPWM;
         unsigned long _timer;
+        unsigned long _startTimer;
+        unsigned long _startTimer2;
+        uint16_t _startDelay;
+        bool _started;
         unsigned char _timePartCount;
+        int _acceleration;
+        int _realAcceleration;
+        
+        bool start()
+        {
+            if (_started)
+            {
+                // Everything is OK, table started
+                return true;
+            }
+           
+            if (_currentPos != 0)
+            {
+                // Everything is OK, table started
+                _started = true;
+                return true;
+            }
+
+            if (millis() - _startTimer2 >= _startDelay)
+            {
+                int limit = calcHighLimitOfMinPWM();
+
+                Serial.println("High limit of _minPWM: " + String(limit));
+                
+                if (_minPWM >= limit)
+                {
+                    // Unable to increase _minPWM anymore
+                    // If correction, wait a second, and if table is still not moving, stop it
+                    if (_state == Correction && millis() - _startTimer >= 1000)
+                    {
+                        Serial.println("Unable to start, stopping...");
+                        stop();
+                    }
+                    return false;
+                }
+
+                _startDelay = _startDelay / 1.5;
+                _startTimer2 = millis();
+                _minPWM += 5;
+                if (_minPWM > limit)
+                    _minPWM = limit;
+                _currentPWM = _minPWM;
+                analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
+
+                Serial.println("Increase PWM. New value: " + String(_minPWM));
+            }
+
+            return false;
+        }
+
+        int calcHighLimitOfMinPWM()
+        {
+            const int highestLimit = 100;
+            
+            switch (_state)
+            {
+                case RunAcc:
+                    // In this case we can return a large enough value
+                    return highestLimit;
+
+                case Move:
+                case Correction:
+                    // Calculate maximum possible value
+                    {
+                        float halfPoint = _graduations / 2.0;
+                        float accelerationLength = _realAcceleration;
+                        float value = MIN_PWM + halfPoint * (MAX_PWM - MIN_PWM) / accelerationLength;
+                        int result = validatePWM(value);
+                        if (result > highestLimit)
+                            result = highestLimit;
+
+                        return result;
+                    }
+
+                default:
+                    return MIN_PWM;
+            }
+        }
         
         void tickMove()
         {
             _currentPos = getCurrentPos();
+            if (!start())
+                return;
+
             bool reached = _forward
                 ? _currentPos >= _graduations
                 : _currentPos <= _graduations;
@@ -546,8 +542,8 @@ class Mover
             float x = _currentPos;
             if (!_forward)
                 x = -x;
-            float accelerationLength = Settings::getRealAcceleration();
-            float currentPWM = MIN_PWM + x * (MAX_PWM - MIN_PWM) / accelerationLength;
+            float accelerationLength = _realAcceleration;
+            float currentPWM = _minPWM + x * (MAX_PWM - _minPWM) / accelerationLength;
             _currentPWM = validatePWM(currentPWM);
         }
 
@@ -558,7 +554,7 @@ class Mover
             if (!_forward)
                 x = -x;
             x -= getFinalDistance();
-            float decelerationLength = Settings::getRealAcceleration();
+            float decelerationLength = _realAcceleration;
             float currentPWM = MIN_PWM + x * (MAX_PWM - MIN_PWM) / decelerationLength;
             _currentPWM = validatePWM(currentPWM);
         }
@@ -575,7 +571,7 @@ class Mover
             else
             {
                 // Make correction
-                Serial.print("Error->");
+                Serial.print("Error(" + String(error) + ")->");
 
                 stop();
                 move(error, MIN_PWM);
@@ -587,7 +583,7 @@ class Mover
         // This function returns length of this final distance
         int getFinalDistance()
         {
-            switch (Settings::getAcceleration())
+            switch (_acceleration)
             {
                 case 10:
                     return _graduations >= 10 * DEGREE ? 18 : 14;
@@ -604,10 +600,13 @@ class Mover
         
         void tickRun()
         {
+            _currentPos = getCurrentPos();
+            if (!start())
+                return;
+
             switch (_state)
             {
                 case RunAcc:
-                    _currentPos = getCurrentPos();
                     accelerate();
                     if (_currentPWM >= _maxPWM)
                     {
@@ -618,7 +617,6 @@ class Mover
                     break;
                     
                 case RunDec:
-                    _currentPos = getCurrentPos();
                     decelerate();
                     if (_currentPWM <= MIN_PWM)
                         stop();
@@ -724,14 +722,10 @@ void Runner::finalize()
     stepNumber = 0;
     digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
     digitalWrite(CAMERA, CAMERA_LOW); // release camera
-    enc.resetState(); // reset encoder
 }
 
-void Runner::display(String top, String stepName)
+void Runner::display(String, String)
 {
-    char strBuf[20];
-    sprintf(strBuf, "%s %d (%d)", stepName.c_str(), stepNumber, Settings::getSteps());
-    menu.display(top, strBuf);
 }
 
 enum State
@@ -926,34 +920,15 @@ void setup()
     pinMode(SHUTTER, OUTPUT);
     digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
     digitalWrite(CAMERA, CAMERA_LOW); // release camera
-    
-    lcd.init();
-    lcd.begin(16, 2);
-    lcd.clear();
-    lcd.backlight();
-
-    photoButton.setButtonLevel(HIGH);
-    nextButton.setButtonLevel(HIGH);
-
-    SetPinFrequencySafe(MOTOR1, 15000);
-    SetPinFrequencySafe(MOTOR2, 15000);
 
     Serial.begin(9600);
 }
 
 void loop()
 {
-    enc.tick();
-    photoButton.tick();
-    nextButton.tick();
     mover.tick();
     worker.tick();
 
-    if (enc.press())
-    {
-        if (worker.getState() == Waiting)
-            worker.start();
-        else
-            worker.cancel();
-    }
+    if (worker.getState() == Waiting)
+        worker.start();
 }

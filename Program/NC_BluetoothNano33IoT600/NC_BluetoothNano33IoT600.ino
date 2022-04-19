@@ -618,7 +618,7 @@ class Mover
 
         int calcHighLimitOfMinPWM()
         {
-            const int highestLimit = 200;
+            const int highestLimit = 100;
             
             switch (_state)
             {

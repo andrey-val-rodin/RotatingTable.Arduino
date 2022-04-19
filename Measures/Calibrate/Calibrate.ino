@@ -295,7 +295,9 @@ class Mover
             if (millis() - _startTimer2 >= _startDelay)
             {
                 int limit = calcHighLimitOfMinPWM();
+
                 Serial.println("High limit of _minPWM: " + String(limit));
+                
                 if (_minPWM >= limit)
                 {
                     // Unable to increase _minPWM anymore
@@ -305,7 +307,6 @@ class Mover
                         Serial.println("Unable to start, stopping...");
                         stop();
                     }
-    
                     return false;
                 }
 
@@ -316,6 +317,7 @@ class Mover
                     _minPWM = limit;
                 _currentPWM = _minPWM;
                 analogWrite(MOTOR, _currentPWM);
+
                 Serial.println("Increase PWM. New value: " + String(_minPWM));
             }
 
