@@ -6,89 +6,13 @@
 #define MOTOR_POWER 4
 #define MOTOR_ENC1 2
 #define MOTOR_ENC2 3
-#define CAMERA 5
-#define SHUTTER 6
-#define CAMERA_LOW HIGH
-#define CAMERA_HIGH LOW
-#define MIN_PWM 64
-#define MAX_PWM 100
 #define GRADUATIONS 4320 // number of graduations per turn
 #define DEGREE (GRADUATIONS / 360)
 
+int MIN_PWM = 50;
+int MAX_PWM = 255;
+
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
-
-const unsigned char stepsLength = 22;
-const uint16_t steps[stepsLength] =
-    { 2, 4, 5, 6, 8, 9, 10, 12, 15, 18, 20, 24, 30, 36, 40, 45, 60, 72, 90, 120, 180, 360 };
-signed char FindInSteps(uint16_t numberOfSteps)
-{
-    for (unsigned char i = 0; i < stepsLength; i++)
-    {
-        if (steps[i] == numberOfSteps)
-            return i;
-    }
-
-    return -1;
-}
-
-class Runner
-{
-    public:
-        static const int delta = 5; // value to increment/decrement pwm
-        
-        static void runAutomatic();
-        
-    private:
-        enum State : char
-        {
-            Waiting,
-            Beginning,
-            Delay,
-            Exposure,
-            Move
-        };
-        
-        static void finalize();
-        static void incrementStep();
-        static void display(String top, String stepName);
-};
-Runner runner;
-
-struct MenuItem
-{
-    String top;
-    String bottom;
-};
-
-typedef void (*callback_t)();
-struct MenuItemsDef
-{
-    static const unsigned char topItemsLength = 6;
-    static MenuItem topItems[topItemsLength];
-
-    static const unsigned char settingsItemsLength = 4;
-    static MenuItem settingsItems[settingsItemsLength];
-
-    static const callback_t handlers[1];
-};
-
-MenuItem MenuItemsDef::topItems[topItemsLength] = {
-    {"%Auto",         ""},
-    {"%Manual",       ""},
-    {"%Nonstop",      ""},
-    {"Video",         ""},
-    {"Rotate 90\337", ""},
-    {"Settings",      ""}
-};
-MenuItem MenuItemsDef::settingsItems[settingsItemsLength] = {
-    {"Steps",        ""},
-    {"Acceleration", ""},
-    {"Delay",        ""},
-    {"Exposure",     ""}
-};
-const callback_t MenuItemsDef::handlers[1] = {
-    Runner::runAutomatic
-};
 
 class PWMValidator
 {
@@ -107,37 +31,16 @@ class PWMValidator
 class Settings
 {
     public:
-        static uint16_t getSteps()
-        {
-            return validateSteps(_steps);
-        }
-
-        static bool checkSteps(uint16_t value)
-        {
-            return FindInSteps(value) >= 0;
-        }
-
-        static uint16_t validateSteps(uint16_t value)
-        {
-            return checkSteps(value)
-                ? value
-                : 24; // use default
-        }
-
-        static void setSteps(uint16_t value)
-        {
-            _steps = value;
-        }
-
         static unsigned char getAcceleration()
         {
-            return validateAcceleration(_acceleration);
+            return 10;
         }
 
         // Returns number of graduations for acceleration and deceleration from min to max PWM and vice versa.
         // Function converts current user-friendly value 1-10 to this value.
         static uint16_t getRealAcceleration()
         {
+            // Change these values if table does not work as expected:
             switch(getAcceleration())
             {
                 case 1:
@@ -162,40 +65,7 @@ class Settings
                     return 100;
             }
         }
-
-        static bool checkAcceleration(unsigned char value)
-        {
-            return 1 <= value && value <= 10;
-        }
-
-        static unsigned char validateAcceleration(unsigned char value)
-        {
-            return checkAcceleration(value)
-                ? value
-                : 7; // use default
-        }
-
-        static void setAcceleration(unsigned char value)
-        {
-            _acceleration = value;
-        }
-
-        static uint16_t getDelay()
-        {
-            return 0;
-        }
-
-        static uint16_t getExposure()
-        {
-            return 100;
-        }
-
-    private:
-        static uint16_t _steps;
-        static unsigned char _acceleration;
 };
-uint16_t Settings::_steps;
-unsigned char Settings::_acceleration;
 
 class Mover
 {
@@ -237,7 +107,7 @@ class Mover
             return _state;
         }
 
-        void move(int32_t graduations, int maxPWM = MAX_PWM)
+        virtual void move(int32_t graduations, int maxPWM = MAX_PWM)
         {
             if (!isStopped())
                 return;
@@ -259,7 +129,7 @@ class Mover
             digitalWrite(DIRECTION, _forward? LOW : HIGH );
         }
 
-        void run(int pwm)
+        virtual void run(int pwm)
         {
             if (!isStopped())
                 return;
@@ -280,7 +150,7 @@ class Mover
             digitalWrite(DIRECTION, _forward? LOW : HIGH );
         }
 
-        void stop()
+        virtual void stop()
         {
             analogWrite(MOTOR, 0);
             _state = Stop;
@@ -388,7 +258,7 @@ class Mover
             _cumulativePos = 0;
         }
 
-    private:
+    protected:
         State _state = Stop;
         int32_t _graduations;
         bool _forward;
@@ -407,7 +277,7 @@ class Mover
         int _acceleration;
         int _realAcceleration;
         
-        bool start()
+        virtual bool start()
         {
             if (_started)
             {
@@ -425,9 +295,7 @@ class Mover
             if (millis() - _startTimer2 >= _startDelay)
             {
                 int limit = calcHighLimitOfMinPWM();
-
                 Serial.println("High limit of _minPWM: " + String(limit));
-                
                 if (_minPWM >= limit)
                 {
                     // Unable to increase _minPWM anymore
@@ -437,6 +305,7 @@ class Mover
                         Serial.println("Unable to start, stopping...");
                         stop();
                     }
+    
                     return false;
                 }
 
@@ -447,7 +316,6 @@ class Mover
                     _minPWM = limit;
                 _currentPWM = _minPWM;
                 analogWrite(MOTOR, _currentPWM);
-
                 Serial.println("Increase PWM. New value: " + String(_minPWM));
             }
 
@@ -483,7 +351,7 @@ class Mover
             }
         }
         
-        void tickMove()
+        virtual void tickMove()
         {
             _currentPos = getCurrentPos();
             if (!start())
@@ -577,7 +445,7 @@ class Mover
             _currentPWM = validatePWM(currentPWM);
         }
 
-        void makeCorrection()
+        virtual void makeCorrection()
         {
             int error = _graduations - _currentPos;
             if (error == 0)
@@ -589,7 +457,7 @@ class Mover
             else
             {
                 // Make correction
-                Serial.print("Error(" + String(error) + ")->");
+                Serial.println("Error = " + String(error) + ", correction...");
 
                 stop();
                 move(error, MIN_PWM);
@@ -657,94 +525,294 @@ class Mover
             return pwm;
         }
 };
-Mover mover;
 
-int16_t stepNumber = 0;
-unsigned long timer = 0;
-bool isRunning = false;
-void Runner::runAutomatic()
+class MeasureMover : public Mover
 {
-    const String mode = "Auto...";
-    const String stepName = "photo";
-    static State currentState;
-    static int32_t lastGraduations;
-    
-    if (!mover.isStopped())
-        return;
-
-    int16_t stepCount = Settings::getSteps();
-    int16_t stepGraduations = GRADUATIONS / stepCount;
-    if (!isRunning)
-    {
-        // Starting
-        stepNumber = 0;
-        digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
-        isRunning = true;
-        lastGraduations = 0;
-        mover.resetAbsolutePos();
-        timer = millis();
-        currentState = Beginning;
-        return;
-    }
-
-    if (currentState == Beginning && millis() - timer >= Settings::getExposure())
-    {
-        stepNumber++;
-        display(mode, stepName);
-        digitalWrite(SHUTTER, CAMERA_HIGH); // make first photo
-        timer = millis();
-        currentState = Exposure;
-        return;
-    }
-    
-    if (currentState == Exposure && millis() - timer >= Settings::getExposure())
-    {
-        digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
-        currentState = Move;
-        int32_t absolutePos = mover.getAbsolutePos();
-        int error = lastGraduations - absolutePos;
-        mover.resetAbsolutePos();
-        lastGraduations = stepGraduations + error;
-        mover.move(lastGraduations);
-        return;
-    }
-    
-    if (currentState == Move)
-    {
-        if (stepNumber < stepCount)
+    public:
+        inline int getUnderError()
         {
-            timer = millis();
-            currentState = Delay;
+            return _underError;
         }
-        else
+        
+        inline int getOverError()
         {
-            finalize();
+            return _overError;
         }
-        return;
-    }
 
-    if (currentState == Delay && millis() - timer >= Settings::getDelay())
-    {
-        stepNumber++;
-        display(mode, stepName);
-        digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
-        timer = millis();
-        currentState = Exposure;
-    }
-}
+        inline bool started()
+        {
+            return _started;
+        }
 
-void Runner::finalize()
+        inline bool canStart()
+        {
+            return _canStart;
+        }
+
+        inline bool canMove()
+        {
+            return _canMove;
+        }
+
+        inline float getLastMoveTime()
+        {
+            return (_stop - _start) / 1000.0;
+        }
+
+        void setVerifyMove(bool verifyMove)
+        {
+            _verifyMove = verifyMove;
+        }
+
+        virtual void move(int32_t graduations, int maxPWM = MAX_PWM)
+        {
+            _underError = 0;
+            _overError = 0;
+            _canStart = true;
+            _canMove = true;
+            _start = _timer2 = millis();
+            Mover::move(graduations, maxPWM);
+        }
+
+        virtual void run(int pwm)
+        {
+            _underError = 0;
+            _overError = 0;
+            _canStart = true;
+            _canMove = true;
+            Mover::run(pwm);
+        }
+
+        virtual void stop()
+        {
+            _stop = millis();
+            Mover::stop();
+        }
+        
+    private:
+        bool _verifyMove;
+        unsigned long _timer2;
+        int32_t _oldPos;
+        unsigned long _start;
+        unsigned long _stop;
+        int _underError;
+        int _overError;
+        bool _canStart;
+        bool _canMove;
+        
+        virtual bool start()
+        {
+            if (!canStart())
+            {
+                return false;
+            }
+               
+            if (_started)
+            {
+                // Everything is OK, table started
+                return true;
+            }
+           
+            if (_currentPos != 0)
+            {
+                // Everything is OK, table started
+                _oldPos = _currentPos;
+                _started = true;
+                return true;
+            }
+
+            if (millis() - _startTimer2 >= _startDelay)
+            {
+                _canStart = false;
+                stop();
+            }
+            
+            return false;
+        }
+
+        virtual void makeCorrection()
+        {
+            int error = _graduations - _currentPos;
+            if (error < 0)
+                _overError = -error;
+            else if (error > 0)
+                _underError = error;
+
+            stop();
+        }
+
+        virtual void tickMove()
+        {
+            Mover::tickMove();
+            if (!_verifyMove)
+                return;
+
+            if (_oldPos != _currentPos)
+            {
+                _oldPos = _currentPos;
+                _timer2 = millis();
+            }
+            else if (millis() - _timer2 >= 1000)
+            {
+                _canMove = false;
+                stop();
+            }
+        }
+};
+MeasureMover mover;
+
+class MinMaxQualifier
 {
-    isRunning = false;
-    mover.stop();
-    stepNumber = 0;
-    digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
-    digitalWrite(CAMERA, CAMERA_LOW); // release camera
-}
+    public:
+        inline bool isDone()
+        {
+            return _isMinDetermined && _isMaxDetermined;
+        }
 
-void Runner::display(String, String)
-{
-}
+        void start()
+        {
+            Serial.println("Deterime MIN_PWM...");
+            _stage = DefineMin;
+            _state = Stopped;
+            _isMinDetermined = false;
+            _isMaxDetermined = false;
+            mover.setVerifyMove(true);
+        }
+
+        void tick()
+        {
+            if (isDone())
+                return;
+
+            if (!_isMinDetermined)
+                DetermineMin();
+            else
+                DetermineMax();
+        }
+
+    private:
+        enum State
+        {
+            Move,
+            Stopped
+        };
+
+        enum Stage
+        {
+            DefineMin,
+            DefineMax
+        };
+
+        State _state;
+        Stage _stage;
+        bool _isMinDetermined;
+        bool _isMaxDetermined;
+        int _low;
+        int _high;
+        int _lastGoodValue;
+        
+        void DetermineMin()
+        {
+            if (_state == Stopped)
+            {
+                Serial.print(String(MIN_PWM) + ": ");
+                _state = Move;
+                mover.move(10, MIN_PWM);
+            }
+            else if (mover.isStopped())
+            {
+                _state = Stopped;
+                if (!mover.canStart() || !mover.canMove())
+                {
+                    Serial.println(mover.canStart() ? "Unable to move" : "Unable to start");
+                    MIN_PWM++;
+                    if (MIN_PWM > 255)
+                    {
+                        Serial.println();
+                        Serial.println("Something goes wrong:-(");
+                        while (true);
+                    }
+                    
+                    Serial.print(String(MIN_PWM) + ": ");
+                    _state = Move;
+                    mover.move(10, MIN_PWM);
+                }
+                else
+                {
+                    _isMinDetermined = true;
+                    Serial.println("MIN_PWM found!");
+                }
+            }
+        }
+
+        void DetermineMax()
+        {
+            if (_stage == DefineMin)
+            {
+                _stage = DefineMax;
+                _state = Stopped;
+                _low = MIN_PWM;
+                _high = MAX_PWM;
+                _lastGoodValue = -1;
+                mover.setVerifyMove(false);
+                Serial.println("______________________________________________________");
+                Serial.println("Deterime MAX_PWM...");
+            }
+            
+            if (_state == Stopped)
+            {
+                Serial.print(String(MAX_PWM) + ": ");
+                _state = Move;
+                mover.move(GRADUATIONS, MAX_PWM);
+            }
+            else if (mover.isStopped())
+            {
+                _state = Stopped;
+                float time = mover.getLastMoveTime();
+                if (mover.getOverError() == 0)
+                {
+                    _lastGoodValue = MAX_PWM;
+
+                    // continue
+                    Serial.println(String(time) + " sec, overError = " +
+                        String(mover.getOverError()) + ", continue");
+
+                    _low = MAX_PWM;
+                    int middle = _low + (_high - _low) / 2;
+                    MAX_PWM = middle;
+                }
+                else
+                {
+                    Serial.println("Too fast: " + String(time) + " sec, overError = " +
+                        String(mover.getOverError()));
+                    
+                    _high = MAX_PWM;
+                    int middle = _low + (_high - _low) / 2;
+                    MAX_PWM = middle;
+                }
+
+                if (_high - _low <= 1)
+                {
+                    if (_lastGoodValue < 0)
+                    {
+                        Serial.println();
+                        Serial.println("Something goes wrong:-(");
+                        while (true);
+                    }
+
+                    MAX_PWM = _lastGoodValue;
+                    Serial.println();
+                    Serial.println("MAX_PWM found!");
+                    Serial.println("______________________________________________________");
+                    Serial.println("#define MIN_PWM " + String(MIN_PWM));
+                    Serial.println("#define MAX_PWM " + String(MAX_PWM));
+                    _isMaxDetermined = true;
+                    return;
+                }
+            }
+        }
+};
+MinMaxQualifier qualifier;
 
 enum State
 {
@@ -770,26 +838,26 @@ class TurnMeasurer
                     return;
     
                 case Measuring:
-                    Runner::runAutomatic();
-                    if (isRunning)
+                    if (!mover.isStopped())
                         return;
-
+    
                     _stop = millis();
                     _state = Measured;
             }
         }
     
-        void measure(int acceleration)
+        void measure(int pwm)
         {
-            Settings::setAcceleration(acceleration);
+            _pwm = pwm;
             _state = Measuring;
             _start = millis();
+            mover.move(GRADUATIONS, _pwm);
         }
     
         String getOutput()
         {
             float time = (_stop - _start) / 1000.0;
-            return "\t" + String(time);
+            return String(_pwm) + "\t" + String(time);
         }
     
         void cancel()
@@ -806,11 +874,14 @@ class TurnMeasurer
         State _state = Waiting;
         unsigned long _start;
         unsigned long _stop;
+        int _pwm;
 };
 
 class Measurer
 {
     public:
+        const int delta = 1;
+        
         inline State getState()
         {
             return _state;
@@ -825,16 +896,16 @@ class Measurer
                 case Measuring:
                     if (_measurer.getState() == Measured)
                     {
-                        Serial.print(_measurer.getOutput());
-                        _acceleration++;
-                        if (_acceleration > 10)
+                        Serial.println(_measurer.getOutput());
+                        _pwm += delta;
+                        if (_pwm > MAX_PWM)
                         {
                             _state = Measured;
                             return;
                         }
                         else
                         {
-                            _measurer.measure(_acceleration);
+                            _measurer.measure(_pwm);
                         }
                     }
                     return;
@@ -844,12 +915,11 @@ class Measurer
             }
         }
 
-        void measure(int fromAcc)
+        void measure()
         {
-            _acceleration = fromAcc;
+            _pwm = MIN_PWM;
             _state = Measuring;
-            Serial.print(Settings::getSteps());
-            _measurer.measure(_acceleration);
+            _measurer.measure(_pwm);
         }
     
         void cancel()
@@ -861,93 +931,46 @@ class Measurer
     private:
         State _state = Waiting;
         TurnMeasurer _measurer;
-        int _acceleration;
+        int _pwm;
 };
 
 class Worker
 {
     public:
-        inline State getState()
-        {
-            return _state;
-        }
-        
         void tick()
         {
-            if (_state == Waiting)
-                return;
-                
             _measurer.tick();
-
-            if(_measurer.getState() == Measured)
-            {
-                _stepIndex++;
-                if (_stepIndex > _stepIndexTo)
-                {
-                    _state = Waiting;
-                    return;
-                }
-
-                Serial.println();
-                Settings::setSteps(steps[_stepIndex]);
-                _measurer.measure(_fromAcc);
-            }
         }
 
-        void start(int fromAcc = 1, int stepIndexFrom = 0, int stepIndexTo = stepsLength - 1)
+        void start()
         {
-            _fromAcc = fromAcc;
-            _stepIndexFrom = stepIndexFrom;
-            _stepIndexTo = stepIndexTo;
-            _state = Measuring;
-            _stepIndex = _stepIndexFrom;
-            Settings::setSteps(steps[_stepIndex]);
-            Settings::setAcceleration(1);
-            for (int i = fromAcc; i <= 10; i++)
-            {
-                Serial.print("\t");
-                Serial.print(i);              
-            }
-            Serial.println();
-            _measurer.measure(_fromAcc);
+            _measurer.measure();
         }
 
-        void cancel()
-        {
-            _measurer.cancel();
-            _state = Waiting;
-        }
-        
     private:
-        State _state = Waiting;
         Measurer _measurer;
-        unsigned char _stepIndex;
-        unsigned char _stepIndexFrom;
-        unsigned char _stepIndexTo;
-        int _fromAcc;
 };
 Worker worker;
 
 void setup()
 {
+    pinMode(MOTOR_ENC1, INPUT);
+    pinMode(MOTOR_ENC2, INPUT);
     pinMode(MOTOR, OUTPUT);
     pinMode(DIRECTION, OUTPUT);
     pinMode(MOTOR_POWER, OUTPUT);
-    pinMode(CAMERA, OUTPUT);
-    pinMode(SHUTTER, OUTPUT);
-    digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
-    digitalWrite(CAMERA, CAMERA_LOW); // release camera
     analogWrite(MOTOR, 0);
     digitalWrite(MOTOR_POWER, HIGH);
-    
+
     Serial.begin(9600);
+
+    qualifier.start();
 }
 
 void loop()
 {
     mover.tick();
-    worker.tick();
-
-    if (worker.getState() == Waiting)
-        worker.start();
+    qualifier.tick();
+    
+//    worker.tick();
 }
