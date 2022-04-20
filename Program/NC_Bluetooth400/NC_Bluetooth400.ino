@@ -408,7 +408,6 @@ class Mover
             _acceleration = Settings::getAcceleration();
             _realAcceleration = Settings::getRealAcceleration();
             _startTimer2 = _startTimer = millis();
-            _startDelay = 100;
             _started = false;
             _state = Move;
 
@@ -429,7 +428,6 @@ class Mover
             _acceleration = Settings::getAcceleration();
             _realAcceleration = Settings::getRealAcceleration();
             _startTimer2 = _startTimer = millis();
-            _startDelay = 100;
             _started = false;
             _state = RunAcc;
 
@@ -558,7 +556,6 @@ class Mover
         unsigned long _timer;
         unsigned long _startTimer;
         unsigned long _startTimer2;
-        uint16_t _startDelay;
         bool _started;
         unsigned char _timePartCount;
         int _acceleration;
@@ -579,7 +576,8 @@ class Mover
                 return true;
             }
 
-            if (millis() - _startTimer2 >= _startDelay)
+            // 100 ms is reasonable amount of time to start moving
+            if (millis() - _startTimer2 >= 100)
             {
                 int limit = calcHighLimitOfMinPWM();
 #ifdef DEBUG_MODE
@@ -599,9 +597,8 @@ class Mover
                     return false;
                 }
 
-                _startDelay = _startDelay / 1.5;
                 _startTimer2 = millis();
-                _minPWM += 5;
+                _minPWM += 1;
                 if (_minPWM > limit)
                     _minPWM = limit;
                 _currentPWM = _minPWM;
@@ -616,7 +613,7 @@ class Mover
 
         int calcHighLimitOfMinPWM()
         {
-            const int highestLimit = 100;
+            int highestLimit = min(100, _maxPWM);
             
             switch (_state)
             {
@@ -733,7 +730,7 @@ class Mover
                 x = -x;
             x -= getFinalDistance();
             float decelerationLength = _realAcceleration;
-            float currentPWM = MIN_PWM + x * (MAX_PWM - MIN_PWM) / decelerationLength;
+            float currentPWM = _minPWM + x * (MAX_PWM - _minPWM) / decelerationLength;
             _currentPWM = validatePWM(currentPWM);
         }
 
@@ -758,7 +755,7 @@ class Mover
             }
         }
 
-        // We should pass end of step with MIN_PWM
+        // We should pass end of step with minimal PWM
         // This function returns length of this final distance
         int getFinalDistance()
         {
@@ -812,8 +809,8 @@ class Mover
         {
             if (pwm > _maxPWM)
                 pwm = _maxPWM;
-            else if (pwm < MIN_PWM)
-                pwm = MIN_PWM;
+            else if (pwm < _minPWM)
+                pwm = _minPWM;
 
             return pwm;
         }
