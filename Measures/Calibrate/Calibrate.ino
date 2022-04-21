@@ -14,6 +14,10 @@ int MAX_PWM = 255;
 
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
+const unsigned char stepsLength = 22;
+const uint16_t steps[stepsLength] =
+    { 2, 4, 5, 6, 8, 9, 10, 12, 15, 18, 20, 24, 30, 36, 40, 45, 60, 72, 90, 120, 180, 360 };
+
 class PWMValidator
 {
     public:
@@ -33,7 +37,12 @@ class Settings
     public:
         static unsigned char getAcceleration()
         {
-            return 10;
+            return _acceleration;
+        }
+
+        static void setAcceleration(unsigned char value)
+        {
+            _acceleration = value;
         }
 
         // Returns number of graduations for acceleration and deceleration from min to max PWM and vice versa.
@@ -65,7 +74,11 @@ class Settings
                     return 100;
             }
         }
+
+    private:
+        static unsigned char _acceleration;
 };
+unsigned char Settings::_acceleration;
 
 class Mover
 {
@@ -563,6 +576,11 @@ class MeasureMover : public Mover
             _verifyMove = verifyMove;
         }
 
+        void setVerifyStart(bool verifyStart)
+        {
+            _verifyStart = verifyStart;
+        }
+
         virtual void move(int32_t graduations, int maxPWM = MAX_PWM)
         {
             _underError = 0;
@@ -589,6 +607,7 @@ class MeasureMover : public Mover
         }
         
     private:
+        bool _verifyStart;
         bool _verifyMove;
         unsigned long _timer2;
         int32_t _oldPos;
@@ -601,6 +620,9 @@ class MeasureMover : public Mover
         
         virtual bool start()
         {
+            if (!_verifyStart)
+                return Mover::start();
+
             if (!canStart())
             {
                 return false;
@@ -620,7 +642,8 @@ class MeasureMover : public Mover
                 return true;
             }
 
-            if (millis() - _startTimer2 >= _startDelay)
+            // 100 ms is reasonable amount of time to start moving
+            if (millis() - _startTimer2 >= 100)
             {
                 _canStart = false;
                 stop();
@@ -660,6 +683,95 @@ class MeasureMover : public Mover
 };
 MeasureMover mover;
 
+class MinPreciser
+{
+    public:
+        inline bool isDone()
+        {
+            return _isDone;
+        }
+        
+        void start()
+        {
+            _begin = true;
+            _step = stepsLength - 1;
+            _underError = 0;
+            _overError = 0;
+            _isDone = false;
+            mover.setVerifyMove(true);
+            mover.setVerifyStart(true);
+        }
+    
+        void tick()
+        {
+            if (isDone())
+                return;
+
+            if (mover.isStopped())
+            {
+                if (_begin)
+                {
+                    _begin = false;
+                    Settings::setAcceleration(1);
+                    Serial.print(String(MIN_PWM) + ": ");
+                    mover.move(calcGraduationCount());
+                }
+                else
+                {
+                    // Analyze results
+                    if (!mover.canStart() || !mover.canMove())
+                    {
+                        Serial.println(mover.canStart() ? "Unable to move" : "Unable to start");
+                        
+                        // Increment MIN_PWM and restart
+                        MIN_PWM++;
+                        start();
+                        return;
+                    }
+
+                    _underError += mover.getUnderError();
+                    _overError += mover.getOverError();
+                    if (_underError > 0)
+                    {
+                        Serial.println("underError: " + String(_underError) +
+                            ", overError: " + String(_overError));
+
+                        // Increment MIN_PWM and restart
+                        MIN_PWM++;
+                        start();
+                        return;
+                    }
+
+                    // Decrement step and continue
+                    _step--;
+                    if (_step < 0)
+                    {
+                        // finishing
+                        _isDone = true;
+                        return;
+                    }
+
+                    mover.move(calcGraduationCount());
+                }
+            }
+        }
+
+    private:
+        bool _begin;
+        int _step;
+        bool _isDone;
+        int _underError;
+        int _overError;
+
+        int calcGraduationCount()
+        {
+            return 
+                (_step >= 0 && _step < stepsLength)
+                ? GRADUATIONS / steps[_step]
+                : 1;
+        }
+};
+
 class MinMaxQualifier
 {
     public:
@@ -676,6 +788,7 @@ class MinMaxQualifier
             _isMinDetermined = false;
             _isMaxDetermined = false;
             mover.setVerifyMove(true);
+            mover.setVerifyStart(true);
         }
 
         void tick()
@@ -699,7 +812,9 @@ class MinMaxQualifier
         enum Stage
         {
             DefineMin,
-            DefineMax
+            PreciseMin,
+            DefineMax,
+            PreciseMinFinally,
         };
 
         State _state;
@@ -709,16 +824,32 @@ class MinMaxQualifier
         int _low;
         int _high;
         int _lastGoodValue;
+        float _lastGoodTime;
+        MinPreciser _preciser;
         
         void DetermineMin()
         {
+            if (_stage == PreciseMin)
+            {
+                _preciser.tick();
+                if (_preciser.isDone())
+                {
+                    Serial.println("Preliminary MIN_PWM found");
+                    _isMinDetermined = true;
+                }
+                return;
+            }
+            
             if (_state == Stopped)
             {
                 Serial.print(String(MIN_PWM) + ": ");
+                Settings::setAcceleration(1);
                 _state = Move;
                 mover.move(10, MIN_PWM);
+                return;
             }
-            else if (mover.isStopped())
+            
+            if (_state == Move && mover.isStopped())
             {
                 _state = Stopped;
                 if (!mover.canStart() || !mover.canMove())
@@ -738,22 +869,39 @@ class MinMaxQualifier
                 }
                 else
                 {
-                    _isMinDetermined = true;
-                    Serial.println("MIN_PWM found!");
+                    Serial.println("Found the smallest possible MIN_PWM. Precising...");
+                    _stage = PreciseMin;
+                    _preciser.start();
                 }
             }
         }
 
         void DetermineMax()
         {
-            if (_stage == DefineMin)
+            if (_stage == PreciseMinFinally)
+            {
+                _preciser.tick();
+                if (_preciser.isDone())
+                {
+                    Serial.println("MIN_PWM found");
+                    Serial.println("______________________________________________________");
+                    Serial.println("#define MIN_PWM " + String(MIN_PWM));
+                    Serial.println("#define MAX_PWM " + String(MAX_PWM));
+                    _isMaxDetermined = true;
+                }
+                return;
+            }
+
+            if (_stage == PreciseMin)
             {
                 _stage = DefineMax;
                 _state = Stopped;
                 _low = MIN_PWM;
                 _high = MAX_PWM;
                 _lastGoodValue = -1;
+                Settings::setAcceleration(10);
                 mover.setVerifyMove(false);
+                mover.setVerifyStart(false);
                 Serial.println("______________________________________________________");
                 Serial.println("Deterime MAX_PWM...");
             }
@@ -771,6 +919,7 @@ class MinMaxQualifier
                 if (mover.getOverError() == 0)
                 {
                     _lastGoodValue = MAX_PWM;
+                    _lastGoodTime = time;
 
                     // continue
                     Serial.println(String(time) + " sec, overError = " +
@@ -800,13 +949,12 @@ class MinMaxQualifier
                     }
 
                     MAX_PWM = _lastGoodValue;
-                    Serial.println();
-                    Serial.println("MAX_PWM found!");
+                    Serial.println("MAX_PWM found: " + String(MAX_PWM) + " (" +
+                        String(_lastGoodTime) + " sec)");
                     Serial.println("______________________________________________________");
-                    Serial.println("#define MIN_PWM " + String(MIN_PWM));
-                    Serial.println("#define MAX_PWM " + String(MAX_PWM));
-                    _isMaxDetermined = true;
-                    return;
+                    Serial.println("Final precising MIN_PWM...");
+                    _stage = PreciseMinFinally;
+                    _preciser.start();
                 }
             }
         }
