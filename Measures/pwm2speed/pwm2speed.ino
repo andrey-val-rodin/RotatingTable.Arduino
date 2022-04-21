@@ -1,25 +1,16 @@
 #define ENCODER_OPTIMIZE_INTERRUPTS
 #include <Encoder.h>
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-compare"
-#include <EncButton.h>
-#pragma GCC diagnostic pop
-#include <PWM.h>
 
 #define MOTOR1 10
 #define MOTOR2 9
 #define MOTOR_ENC1 2
 #define MOTOR_ENC2 3
+#define MIN_PWM 60
 #define MAX_PWM 255
 #define GRADUATIONS 4320 // number of graduations per turn
 #define DEGREE (GRADUATIONS / 360)
 
-int MIN_PWM = 10;
-const int delta = 1;
-
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
-
-EncButton<EB_TICK, 13, 12, 11> enc; // pins 11, 12, 13
 
 class PWMValidator
 {
@@ -560,11 +551,15 @@ class TurnMeasurer
             _start = millis();
             mover.move(GRADUATIONS, _pwm);
         }
-    
+
+        float getTime()
+        {
+            return (_stop - _start) / 1000.0;
+        }
+        
         String getOutput()
         {
-            float time = (_stop - _start) / 1000.0;
-            return String(_pwm) + "\t" + String(time);
+            return String(_pwm) + "\t" + String(getTime());
         }
     
         void cancel()
@@ -584,6 +579,7 @@ class TurnMeasurer
         int _pwm;
 };
 
+const int delta = 1;
 class Measurer
 {
     public:
@@ -601,6 +597,7 @@ class Measurer
                 case Measuring:
                     if (_measurer.getState() == Measured)
                     {
+                        append(_measurer.getTime());
                         Serial.println(_measurer.getOutput());
                         _pwm += delta;
                         if (_pwm > MAX_PWM)
@@ -626,6 +623,19 @@ class Measurer
             _state = Measuring;
             _measurer.measure(_pwm);
         }
+
+        void printTimes()
+        {
+            Serial.print("{ ");
+            for (int i = 0; i < MAX_PWM - MIN_PWM + 1; i++)
+            {
+                if (i > 0)
+                    Serial.print(", ");
+
+                Serial.print(String(_times[i]));
+            }
+            Serial.print(" }");
+        }
     
         void cancel()
         {
@@ -637,73 +647,41 @@ class Measurer
         State _state = Waiting;
         TurnMeasurer _measurer;
         int _pwm;
+        unsigned char _times[MAX_PWM - MIN_PWM + 1];
+
+        void append(float time)
+        {
+            int index = _pwm - MIN_PWM;
+            int value = round(time);
+            if (value > 255)
+                value = 255;
+
+            _times[index] = (unsigned char)value;
+        }
 };
 
 class Worker
 {
     public:
-        inline int getStage()
+        void start()
         {
-            return _stage;
+            _measurer.measure();
         }
-        
+    
         void tick()
         {
-            if (_stage == 0)
-                return;
-
             _measurer.tick();
-            
-            switch (_stage)
+            if (_measurer.getState() == Measured)
             {
-                case 1:
-                    if (_measurer.getState() == Measured)
-                        setStage(2);
-                    return;
-
-                default:
-                    return;
+                // finishing
+                Serial.println();
+                _measurer.printTimes();
+                while (true);
             }
-        }
-
-        void start(int stage = 1)
-        {
-            setStage(stage);
-        }
-
-        void cancel()
-        {
-            setStage(0);
-            _measurer.cancel();
         }
         
     private:
-        int _stage = 0;
         Measurer _measurer;
-
-        void setStage(int stage)
-        {
-            _stage = stage;
-            switch (_stage)
-            {
-                case 1:
-                    Serial.println("Стандартная частота");
-                    MIN_PWM = 10;
-                    break;
-
-                case 2:
-                    Serial.println("15000 Гц");
-                    SetPinFrequencySafe(MOTOR1, 15000);
-                    SetPinFrequencySafe(MOTOR2, 15000);
-                    MIN_PWM = 65;
-                    break;
-
-                default:
-                    return;
-            }
-            
-            _measurer.measure();
-        }
 };
 Worker worker;
 
@@ -713,22 +691,14 @@ void setup()
     pinMode(MOTOR_ENC2, INPUT);
     pinMode(MOTOR1, OUTPUT);
     pinMode(MOTOR2, OUTPUT);
-    enc.setButtonLevel(HIGH);
 
     Serial.begin(9600);
+
+    worker.start();
 }
 
 void loop()
 {
-    enc.tick();
     mover.tick();
     worker.tick();
-
-    if (enc.press())
-    {
-        if (worker.getStage() == 0)
-            worker.start(2);
-        else
-            worker.cancel();
-    }
 }
