@@ -326,7 +326,15 @@ class Settings
         {
             static const unsigned char buff[] =
             {
-                70, 49, 38, 32, 27, 24, 21, 19, 18, 16, 15, 14, 13, 13, 12, 12, 11, 11, 10, 10, 9, 9, 9, 9, 8, 8, 8, 8, 8, 7
+                141, 127, 114, 104, 96, 89, 83, 78, 74, 70, 66, 63, 60, 57, 55, 52, 50, 49, 50, 48, 47, 46, 45,
+                44, 43, 42, 41, 40, 39, 38, 38, 37, 36, 36, 35, 34, 34, 33, 33, 33, 32, 32, 31, 31, 30, 30, 30,
+                29, 29, 29, 28, 28, 28, 27, 27, 27, 27, 26, 26, 26, 25, 25, 25, 25, 24, 24, 24, 24, 23, 23, 23,
+                23, 23, 22, 22, 22, 22, 22, 22, 21, 21, 21, 21, 21, 20, 20, 20, 20, 20, 20, 20, 19, 19, 19, 19,
+                19, 19, 19, 19, 18, 18, 18, 18, 18, 18, 18, 18, 17, 17, 17, 17, 17, 17, 17, 17, 17, 16, 16, 16,
+                16, 16, 16, 16, 16, 16, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 14, 14, 14, 14, 14, 14,
+                14, 14, 14, 14, 14, 14, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 12, 12, 12, 12, 12, 12, 12,
+                12, 12, 12, 12, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 10, 10, 10, 10, 10, 10, 10, 10,
+                10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10
             };
             
             int index = pwm - MIN_PWM;
@@ -1504,7 +1512,8 @@ class Runner
 
         int calcDelta()
         {
-            return 1;
+            int x = mover.getCurrentPWM();
+            return 0.05 * x + 2;
         }
         
         inline bool isIncreasePWM()
@@ -1896,17 +1905,12 @@ Listener listener;
 
 void setup()
 {
-    pinMode(MOTOR_ENC1, INPUT);
-    pinMode(MOTOR_ENC2, INPUT);
-    pinMode(MOTOR, OUTPUT);
-    pinMode(DIRECTION, OUTPUT);
-    pinMode(MOTOR_POWER, OUTPUT);
+    pinMode(MOTOR1, OUTPUT);
+    pinMode(MOTOR2, OUTPUT);
     pinMode(CAMERA, OUTPUT);
     pinMode(SHUTTER, OUTPUT);
     digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
     digitalWrite(CAMERA, CAMERA_LOW); // release camera
-    analogWrite(MOTOR, 0);
-    digitalWrite(MOTOR_POWER, HIGH);
 
     SetupHardwareTimer();
 
