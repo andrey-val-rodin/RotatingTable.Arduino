@@ -1,8 +1,7 @@
 #include <Encoder.h>
 
-#define MOTOR 9
-#define DIRECTION 10
-#define MOTOR_POWER 4
+#define MOTOR1 10
+#define MOTOR2 9
 #define MOTOR_ENC1 2
 #define MOTOR_ENC2 3
 #define CAMERA 5
@@ -423,8 +422,7 @@ class Mover
             _started = false;
             _state = Move;
 
-            analogWrite(MOTOR, _currentPWM);
-            digitalWrite(DIRECTION, _forward? LOW : HIGH );
+            analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
         }
 
         void run(int pwm)
@@ -443,13 +441,13 @@ class Mover
             _started = false;
             _state = RunAcc;
 
-            analogWrite(MOTOR, _currentPWM);
-            digitalWrite(DIRECTION, _forward? LOW : HIGH );
+            analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
         }
 
         void stop()
         {
-            analogWrite(MOTOR, 0);
+            analogWrite(MOTOR1, 0);
+            analogWrite(MOTOR2, 0);
             _state = Stop;
         }
 
@@ -501,7 +499,7 @@ class Mover
             _maxPWM += delta;
             _maxPWM = PWMValidator::validate(_maxPWM);
             _currentPWM = _maxPWM;
-            analogWrite(MOTOR, _currentPWM);
+            analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
         }
 
         bool canChangePWM(int delta)
@@ -614,7 +612,7 @@ class Mover
                 if (_minPWM > limit)
                     _minPWM = limit;
                 _currentPWM = _minPWM;
-                analogWrite(MOTOR, _currentPWM);
+                analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
 #ifdef DEBUG_MODE
                 Serial.println("Increase PWM. New value: " + String(_minPWM));
 #endif
@@ -693,7 +691,7 @@ class Mover
                 else
                     decelerate();
 
-                analogWrite(MOTOR, _currentPWM);
+                analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
                 return;
             }
 
@@ -801,7 +799,7 @@ class Mover
                         _currentPWM = _maxPWM;
                         _state = Run;
                     }
-                    analogWrite(MOTOR, _currentPWM);
+                    analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
                     break;
                     
                 case RunDec:
@@ -809,7 +807,7 @@ class Mover
                     if (_currentPWM <= MIN_PWM)
                         stop();
                     else
-                        analogWrite(MOTOR, _currentPWM);
+                        analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
                     break;
 
                 default:
