@@ -573,8 +573,6 @@ Worker worker;
 
 void setup()
 {
-    pinMode(MOTOR_ENC1, INPUT);
-    pinMode(MOTOR_ENC2, INPUT);
     pinMode(MOTOR1, OUTPUT);
     pinMode(MOTOR2, OUTPUT);
 

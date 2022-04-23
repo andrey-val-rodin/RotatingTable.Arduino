@@ -705,8 +705,6 @@ Worker worker;
 
 void setup()
 {
-    pinMode(MOTOR_ENC1, INPUT);
-    pinMode(MOTOR_ENC2, INPUT);
     pinMode(MOTOR, OUTPUT);
     pinMode(DIRECTION, OUTPUT);
     pinMode(MOTOR_POWER, OUTPUT);

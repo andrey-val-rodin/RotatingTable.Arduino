@@ -1593,8 +1593,6 @@ void Runner::display(const char* top, const char* stepName)
 
 void setup()
 {
-    pinMode(MOTOR_ENC1, INPUT);
-    pinMode(MOTOR_ENC2, INPUT);
     pinMode(MOTOR1, OUTPUT);
     pinMode(MOTOR2, OUTPUT);
     pinMode(CAMERA, OUTPUT);
