@@ -614,7 +614,7 @@ class Mover
                 case Correction:
                     // Calculate maximum possible value
                     {
-                        float halfPoint = _graduations / 2.0;
+                        float halfPoint = abs(_graduations) / 2.0;
                         float accelerationLength = _realAcceleration;
                         float value = MIN_PWM + halfPoint * (MAX_PWM - MIN_PWM) / accelerationLength;
                         int result = validatePWM(value);
