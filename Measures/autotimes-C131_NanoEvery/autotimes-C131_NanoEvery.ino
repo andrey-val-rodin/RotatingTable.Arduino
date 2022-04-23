@@ -15,8 +15,13 @@
 
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
+// We must increase the PWM to reduce the noise.
+// But Arduino Nano Every allows changing system clock only.
+// See https://forum.arduino.cc/t/nano-every-pwm-frequency/602016 for details
+// TCA_SINGLE_CLKSEL_DIV4_gc will speed up the system time by 16 times,
+// while the PWM frequency will be about 16 kHz.
+// After calling this function, we have to multiply all time intervals by 16
 unsigned int timeMultiplier = 16;
-// TODO
 void SetupHardwareTimer()
 {
     // Turn off timer while we change parameters
