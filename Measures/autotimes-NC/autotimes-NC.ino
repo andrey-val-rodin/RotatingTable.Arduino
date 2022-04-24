@@ -15,6 +15,8 @@
 #define GRADUATIONS 4320 // number of graduations per turn
 #define DEGREE (GRADUATIONS / 360)
 
+#define DEBUG_MODE
+
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
 const unsigned char stepsLength = 22;
@@ -29,6 +31,12 @@ signed char FindInSteps(uint16_t numberOfSteps)
     }
 
     return -1;
+}
+
+void writeMotorPWM(unsigned char pwm, bool forward = true)
+{
+    analogWrite(MOTOR, pwm);
+    digitalWrite(DIRECTION, forward? LOW : HIGH );
 }
 
 class Runner
@@ -254,8 +262,7 @@ class Mover
             _started = false;
             _state = Move;
 
-            analogWrite(MOTOR, _currentPWM);
-            digitalWrite(DIRECTION, _forward? LOW : HIGH );
+            writeMotorPWM(_currentPWM, _forward);
         }
 
         void run(int pwm)
@@ -274,13 +281,12 @@ class Mover
             _started = false;
             _state = RunAcc;
 
-            analogWrite(MOTOR, _currentPWM);
-            digitalWrite(DIRECTION, _forward? LOW : HIGH );
+            writeMotorPWM(_currentPWM, _forward);
         }
 
         void stop()
         {
-            analogWrite(MOTOR, 0);
+            writeMotorPWM(0);
             _state = Stop;
         }
 
@@ -332,7 +338,7 @@ class Mover
             _maxPWM += delta;
             _maxPWM = PWMValidator::validate(_maxPWM);
             _currentPWM = _maxPWM;
-            analogWrite(MOTOR, _currentPWM);
+            writeMotorPWM(_currentPWM, _forward);
         }
 
         bool canChangePWM(int delta)
@@ -423,16 +429,18 @@ class Mover
             if (millis() - _startTimer2 >= 100)
             {
                 int limit = calcHighLimitOfMinPWM();
-
+#ifdef DEBUG_MODE
                 Serial.println("High limit of _minPWM: " + String(limit));
-                
+#endif
                 if (_minPWM >= limit)
                 {
                     // Unable to increase _minPWM anymore
                     // If correction, wait a second, and if table is still not moving, stop it
                     if (_state == Correction && millis() - _startTimer >= 1000)
                     {
+#ifdef DEBUG_MODE
                         Serial.println("Unable to start, stopping...");
+#endif
                         stop();
                     }
                     return false;
@@ -443,9 +451,10 @@ class Mover
                 if (_minPWM > limit)
                     _minPWM = limit;
                 _currentPWM = _minPWM;
-                analogWrite(MOTOR, _currentPWM);
-
+                writeMotorPWM(_currentPWM, _forward);
+#ifdef DEBUG_MODE
                 Serial.println("Increase PWM. New value: " + String(_minPWM));
+#endif
             }
 
             return false;
@@ -521,7 +530,7 @@ class Mover
                 else
                     decelerate();
 
-                analogWrite(MOTOR, _currentPWM);
+                writeMotorPWM(_currentPWM, _forward);
                 return;
             }
 
@@ -586,8 +595,9 @@ class Mover
             else
             {
                 // Make correction
-                Serial.print("Error(" + String(error) + ")->");
-
+#ifdef DEBUG_MODE
+                Serial.println("Error = " + String(error) + ", correction...");
+#endif
                 stop();
                 move(error, MIN_PWM);
                 _state = Correction;
@@ -628,7 +638,7 @@ class Mover
                         _currentPWM = _maxPWM;
                         _state = Run;
                     }
-                    analogWrite(MOTOR, _currentPWM);
+                    writeMotorPWM(_currentPWM, _forward);
                     break;
                     
                 case RunDec:
@@ -636,7 +646,7 @@ class Mover
                     if (_currentPWM <= MIN_PWM)
                         stop();
                     else
-                        analogWrite(MOTOR, _currentPWM);
+                        writeMotorPWM(_currentPWM, _forward);
                     break;
 
                 default:
@@ -934,7 +944,7 @@ void setup()
     pinMode(SHUTTER, OUTPUT);
     digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
     digitalWrite(CAMERA, CAMERA_LOW); // release camera
-    analogWrite(MOTOR, 0);
+    writeMotorPWM(0);
     digitalWrite(MOTOR_POWER, HIGH);
     
     Serial.begin(9600);

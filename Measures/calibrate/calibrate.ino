@@ -11,11 +11,24 @@
 int MIN_PWM = 50;
 int MAX_PWM = 255;
 
+#define DEBUG_MODE
+
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
 const unsigned char stepsLength = 22;
 const uint16_t steps[stepsLength] =
     { 2, 4, 5, 6, 8, 9, 10, 12, 15, 18, 20, 24, 30, 36, 40, 45, 60, 72, 90, 120, 180, 360 };
+
+void writeMotorPWM(unsigned char pwm, bool forward = true)
+{
+    if (pwm == 0)
+    {
+        analogWrite(MOTOR1, 0);
+        analogWrite(MOTOR2, 0);
+    }
+    else
+        analogWrite(forward? MOTOR1 : MOTOR2, pwm);
+}
 
 class PWMValidator
 {
@@ -119,7 +132,7 @@ class Mover
             _started = false;
             _state = Move;
 
-            analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
+            writeMotorPWM(_currentPWM, _forward);
         }
 
         virtual void run(int pwm)
@@ -138,13 +151,12 @@ class Mover
             _started = false;
             _state = RunAcc;
 
-            analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
+            writeMotorPWM(_currentPWM, _forward);
         }
 
         virtual void stop()
         {
-            analogWrite(MOTOR1, 0);
-            analogWrite(MOTOR2, 0);
+            writeMotorPWM(0);
             _state = Stop;
         }
 
@@ -196,7 +208,7 @@ class Mover
             _maxPWM += delta;
             _maxPWM = PWMValidator::validate(_maxPWM);
             _currentPWM = _maxPWM;
-            analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
+            writeMotorPWM(_currentPWM, _forward);
         }
 
         bool canChangePWM(int delta)
@@ -287,16 +299,18 @@ class Mover
             if (millis() - _startTimer2 >= 100)
             {
                 int limit = calcHighLimitOfMinPWM();
-
+#ifdef DEBUG_MODE
                 Serial.println("High limit of _minPWM: " + String(limit));
-                
+#endif
                 if (_minPWM >= limit)
                 {
                     // Unable to increase _minPWM anymore
                     // If correction, wait a second, and if table is still not moving, stop it
                     if (_state == Correction && millis() - _startTimer >= 1000)
                     {
+#ifdef DEBUG_MODE
                         Serial.println("Unable to start, stopping...");
+#endif
                         stop();
                     }
                     return false;
@@ -307,9 +321,10 @@ class Mover
                 if (_minPWM > limit)
                     _minPWM = limit;
                 _currentPWM = _minPWM;
-                analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
-
+                writeMotorPWM(_currentPWM, _forward);
+#ifdef DEBUG_MODE
                 Serial.println("Increase PWM. New value: " + String(_minPWM));
+#endif
             }
 
             return false;
@@ -385,7 +400,7 @@ class Mover
                 else
                     decelerate();
 
-                analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
+                writeMotorPWM(_currentPWM, _forward);
                 return;
             }
 
@@ -450,8 +465,9 @@ class Mover
             else
             {
                 // Make correction
+#ifdef DEBUG_MODE
                 Serial.println("Error = " + String(error) + ", correction...");
-
+#endif
                 stop();
                 move(error, MIN_PWM);
                 _state = Correction;
@@ -492,7 +508,7 @@ class Mover
                         _currentPWM = _maxPWM;
                         _state = Run;
                     }
-                    analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
+                    writeMotorPWM(_currentPWM, _forward);
                     break;
                     
                 case RunDec:
@@ -500,7 +516,7 @@ class Mover
                     if (_currentPWM <= MIN_PWM)
                         stop();
                     else
-                        analogWrite(_forward? MOTOR1 : MOTOR2, _currentPWM);
+                        writeMotorPWM(_currentPWM, _forward);
                     break;
 
                 default:
