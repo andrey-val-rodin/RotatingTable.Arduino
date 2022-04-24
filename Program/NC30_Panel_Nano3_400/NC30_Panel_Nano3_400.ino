@@ -27,7 +27,7 @@
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-EncButton<EB_TICK, 12, 13, 11> enc; // pins 11, 12, 13
+EncButton<EB_TICK, 13, 12, 11> enc; // pins 11, 12, 13
 EncButton<EB_TICK, 7> photoButton;  // pin 7
 EncButton<EB_TICK, 8> nextButton;   // pin 8
 
@@ -80,15 +80,35 @@ class Runner
             Move
         };
         
+        static int16_t _stepNumber;
+        static unsigned long _timer;
+        static unsigned long _timer2;
+        static bool _isRunning;
+        static int32_t _lastGraduations;
+        static State _currentState;
+        static bool _needToMove;
+        static int _nextSnapshotPos;
+        static bool _needToStoreNewPWM;
+
         static void finalize();
-        static void display(String top, String stepName);
+        static void display(const char* top, const char* stepName);
 };
 Runner runner;
 
+int16_t Runner::_stepNumber = 0;
+unsigned long Runner::_timer = 0;
+unsigned long Runner::_timer2 = 0;
+bool Runner::_isRunning = false;
+int32_t Runner::_lastGraduations;
+Runner::State Runner::_currentState;
+bool Runner::_needToMove;
+int Runner::_nextSnapshotPos;
+bool Runner::_needToStoreNewPWM;
+
 struct MenuItem
 {
-    String top;
-    String bottom;
+    char top[17];
+    char bottom[17];
 };
 
 typedef void (*callback_t)();
@@ -460,39 +480,39 @@ class Menu
 
         void display()
         {
-            String top;
+            const char* top;
             unsigned char index = (unsigned char) current;
             switch (_mode)
             {
                 case MenuItems:
                     top = _items[index].top;
-                    if (top.startsWith("%"))
+                    if (top != NULL && top[0] == '%')
                         top = formatSteps(top);
                     printTop(top);
                     printBottom(_items[index].bottom);
                     break;
 
                 case Array:
-                    printTop(String(_array[index], DEC));
+                    printTop(String(_array[index]).c_str());
                     printBottom("");
                     break;
                 
                 case Range:
-                    printTop(String((current + _offset) * _multiplier, DEC));
+                    printTop(String((current + _offset) * _multiplier).c_str());
                     printBottom("");
                     break;
             }
         }
 
-        String formatSteps(String top)
+        const char* formatSteps(const char* top)
         {
-            top.remove(0, 1); // remove % sign
-            char strBuf[20];
-            sprintf(strBuf, "%s (%d)", top.c_str(), Settings::getSteps());
+            top += 1; // remove % sign
+            static char strBuf[20];
+            sprintf(strBuf, "%s (%d)", top, Settings::getSteps());
             return strBuf;
         }
         
-        void display(String top, String bottom)
+        void display(const char* top, const char* bottom)
         {
             printTop(top);
             printBottom(bottom);
@@ -525,35 +545,35 @@ class Menu
         unsigned char _offset;
         unsigned char _multiplier;
         
-        String _recentTop;
-        String _recentBottom;
+        char _recentTop[17];
+        char _recentBottom[17];
 
-        void printTop(String text)
+        void printTop(const char* text)
         {
-            if (_recentTop != text)
+            if (strcmp(_recentTop, text) != 0)
             {
-                _recentTop = text;
+                strcpy(_recentTop, text);
                 lcd.setCursor(0, 0);
                 lcd.print(text);
 
                 // Clear rest of space
-                for (int i = text.length(); i <= 16; i++)
+                for (int i = strlen(text); i <= 16; i++)
                 {
                     lcd.print(' ');
                 }
             }
         }
 
-        void printBottom(String text)
+        void printBottom(const char* text)
         {
-            if (_recentBottom != text)
+            if (strcmp(_recentBottom, text) != 0)
             {
-                _recentBottom = text;
+                strcpy(_recentBottom, text);
                 lcd.setCursor(0, 1);
                 lcd.print(text);
 
                 // Clear rest of space
-                for (int i = text.length(); i <= 16; i++)
+                for (int i = strlen(text); i <= 16; i++)
                 {
                     lcd.print(' ');
                 }
@@ -1158,23 +1178,18 @@ class Selector
 
         void updateSettings()
         {
-            MenuItemsDef::settingsItems[0].bottom = String(Settings::getSteps(), DEC);
-            MenuItemsDef::settingsItems[1].bottom = String(Settings::getAcceleration(), DEC);
-            MenuItemsDef::settingsItems[2].bottom = String(Settings::getDelay(), DEC);
-            MenuItemsDef::settingsItems[3].bottom = String(Settings::getExposure(), DEC);
+            strcpy(MenuItemsDef::settingsItems[0].bottom, String(Settings::getSteps()).c_str());
+            strcpy(MenuItemsDef::settingsItems[1].bottom, String(Settings::getAcceleration()).c_str());
+            strcpy(MenuItemsDef::settingsItems[2].bottom, String(Settings::getDelay()).c_str());
+            strcpy(MenuItemsDef::settingsItems[3].bottom, String(Settings::getExposure()).c_str());;
         }
 };
 Selector selector;
 
-int16_t stepNumber = 0;
-unsigned long timer = 0;
-bool isRunning = false;
 void Runner::runAutomatic()
 {
-    const String mode = "Auto...";
-    const String stepName = "photo";
-    static State currentState;
-    static int32_t lastGraduations;
+    const char* mode = "Auto...";
+    const char* stepName = "photo";
 #ifdef DEBUG_MODE
     static int total = 0;
 #endif
@@ -1190,55 +1205,55 @@ void Runner::runAutomatic()
 
     int16_t stepCount = Settings::getSteps();
     int16_t stepGraduations = GRADUATIONS / stepCount;
-    if (!isRunning)
+    if (!_isRunning)
     {
         // Starting
-        stepNumber = 0;
+        _stepNumber = 0;
         digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
-        isRunning = true;
-        lastGraduations = 0;
+        _isRunning = true;
+        _lastGraduations = 0;
         mover.resetAbsolutePos();
-        timer = millis();
-        currentState = Beginning;
+        _timer = millis();
+        _currentState = Beginning;
 #ifdef DEBUG_MODE
         total = 0;
 #endif
         return;
     }
 
-    if (currentState == Beginning && millis() - timer >= Settings::getExposure())
+    if (_currentState == Beginning && millis() - _timer >= 10) // 10 ms is a time for preparing camera
     {
-        stepNumber++;
+        _stepNumber++;
         display(mode, stepName);
         digitalWrite(SHUTTER, CAMERA_HIGH); // make first photo
-        timer = millis();
-        currentState = Exposure;
+        _timer = millis();
+        _currentState = Exposure;
         return;
     }
     
-    if (currentState == Exposure && millis() - timer >= Settings::getExposure())
+    if (_currentState == Exposure && millis() - _timer >= Settings::getExposure())
     {
         digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
-        currentState = Move;
+        _currentState = Move;
         int32_t absolutePos = mover.getAbsolutePos();
-        int error = lastGraduations - absolutePos;
+        int error = _lastGraduations - absolutePos;
 #ifdef DEBUG_MODE
         total += absolutePos;
         Serial.println("stepGraduations = " + String(stepGraduations) + "  absolutePos = " +
             String(absolutePos) + "  error = " + String(error));
 #endif
         mover.resetAbsolutePos();
-        lastGraduations = stepGraduations + error;
-        mover.move(lastGraduations);
+        _lastGraduations = stepGraduations + error;
+        mover.move(_lastGraduations);
         return;
     }
     
-    if (currentState == Move)
+    if (_currentState == Move)
     {
-        if (stepNumber < stepCount)
+        if (_stepNumber < stepCount)
         {
-            timer = millis();
-            currentState = Delay;
+            _timer = millis();
+            _currentState = Delay;
         }
         else
         {
@@ -1252,23 +1267,20 @@ void Runner::runAutomatic()
         return;
     }
 
-    if (currentState == Delay && millis() - timer >= Settings::getDelay())
+    if (_currentState == Delay && millis() - _timer >= Settings::getDelay())
     {
-        stepNumber++;
+        _stepNumber++;
         display(mode, stepName);
         digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
-        timer = millis();
-        currentState = Exposure;
+        _timer = millis();
+        _currentState = Exposure;
     }
 }
 
 void Runner::runManual()
 {
-    const String mode = "Manual...";
-    const String stepName = "step";
-    static State currentState;
-    static bool needToMove;
-    static int32_t lastGraduations;
+    const char* mode = "Manual...";
+    const char* stepName = "step";
 #ifdef DEBUG_MODE
     static int total = 0;
 #endif
@@ -1281,70 +1293,70 @@ void Runner::runManual()
 
     int16_t stepCount = Settings::getSteps();
     int stepGraduations = GRADUATIONS / stepCount;
-    if (!isRunning)
+    if (!_isRunning)
     {
         // Starting
-        stepNumber = 1;
-        needToMove = false;
+        _stepNumber = 1;
+        _needToMove = false;
         display(mode, stepName);
         digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
-        isRunning = true;
-        lastGraduations = 0;
+        _isRunning = true;
+        _lastGraduations = 0;
         mover.resetAbsolutePos();
-        timer = millis();
-        currentState = Exposure;
+        _timer = millis();
+        _currentState = Exposure;
 #ifdef DEBUG_MODE
         total = 0;
 #endif
         return;
     }
 
-    if (currentState == Exposure && millis() - timer >= Settings::getExposure())
+    if (_currentState == Exposure && millis() - _timer >= Settings::getExposure())
     {
         digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
-        currentState = Waiting;
-        if (needToMove)
+        _currentState = Waiting;
+        if (_needToMove)
         {
-            needToMove = false;
-            currentState = Move;
+            _needToMove = false;
+            _currentState = Move;
             int32_t absolutePos = mover.getAbsolutePos();
-            int error = lastGraduations - absolutePos;
+            int error = _lastGraduations - absolutePos;
 #ifdef DEBUG_MODE
             total += absolutePos;
             Serial.println("stepGraduations = " + String(stepGraduations) + "  absolutePos = " +
                 String(absolutePos) + "  error = " + String(error));
 #endif
             mover.resetAbsolutePos();
-            lastGraduations = stepGraduations + error;
-            mover.move(lastGraduations);
+            _lastGraduations = stepGraduations + error;
+            mover.move(_lastGraduations);
         }
 
         return;
     }
 
-    if (photoButton.press() && currentState == Waiting)
+    if (photoButton.press() && _currentState == Waiting)
     {
         digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
-        timer = millis();
-        currentState = Exposure;
+        _timer = millis();
+        _currentState = Exposure;
         return;
     }
 
-    if (nextButton.press() && currentState == Waiting)
+    if (nextButton.press() && _currentState == Waiting)
     {
         digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
-        timer = millis();
-        currentState = Exposure;
-        needToMove = true;
+        _timer = millis();
+        _currentState = Exposure;
+        _needToMove = true;
         return;
     }
 
-    if (currentState == Move && mover.isStopped())
+    if (_currentState == Move && mover.isStopped())
     {
-        if (stepNumber < stepCount)
+        if (_stepNumber < stepCount)
         {
-            currentState = Waiting;
-            stepNumber++;
+            _currentState = Waiting;
+            _stepNumber++;
             display(mode, stepName);
         }
         else
@@ -1361,11 +1373,8 @@ void Runner::runManual()
 
 void Runner::runNonstop()
 {
-    const String mode = "Nonstop...";
-    const String stepName = "photo";
-    static State currentState;
-    static int nextSnapshotPos;
-    static bool needToStoreNewPWM;
+    const char* mode = "Nonstop...";
+    const char* stepName = "photo";
 #ifdef DEBUG_MODE
     static int total = 0;
 #endif
@@ -1386,7 +1395,7 @@ void Runner::runNonstop()
                     d = mover.getCurrentPWM() - Settings::getLowRealNonstopPWM();
 
                 mover.changePWM(-d);
-                needToStoreNewPWM = true;
+                _needToStoreNewPWM = true;
             }
         }
         else if (enc.right())
@@ -1398,22 +1407,22 @@ void Runner::runNonstop()
                     d = Settings::getHighRealNonstopPWM() - mover.getCurrentPWM();
 
                 mover.changePWM(d);
-                needToStoreNewPWM = true;
+                _needToStoreNewPWM = true;
             }
         }
     }
 
     int16_t stepCount = Settings::getSteps();
     int stepGraduations = GRADUATIONS / stepCount;
-    if (!isRunning)
+    if (!_isRunning)
     {
         // Starting
-        stepNumber = 0;
+        _stepNumber = 0;
         digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
-        isRunning = true;
-        needToStoreNewPWM = false;
-        timer = millis();
-        currentState = Beginning;
+        _isRunning = true;
+        _needToStoreNewPWM = false;
+        _timer = millis();
+        _currentState = Beginning;
 #ifdef DEBUG_MODE
         total = 0;
         mover.resetAbsolutePos();
@@ -1421,51 +1430,51 @@ void Runner::runNonstop()
         return;
     }
 
-    if (currentState == Beginning && millis() - timer >= Settings::getExposure())
+    if (_currentState == Beginning && millis() - _timer >= Settings::getExposure())
     {
-        stepNumber++;
+        _stepNumber++;
         display(mode, stepName);
         digitalWrite(SHUTTER, CAMERA_HIGH); // make first photo
-        nextSnapshotPos = stepGraduations;
-        timer = millis();
-        currentState = Exposure;
+        _nextSnapshotPos = stepGraduations;
+        _timer = millis();
+        _currentState = Exposure;
         mover.move(GRADUATIONS, Settings::getRealNonstopPWM());
         return;
     }
 
     const int releaseShutterDelay = 50;
-    if (currentState == Exposure && millis() - timer >= releaseShutterDelay)
+    if (_currentState == Exposure && millis() - _timer >= releaseShutterDelay)
     {
         digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
-        currentState = Move;
+        _currentState = Move;
     }
 
-    if (currentState == Move && mover.getCurrentPos() >= nextSnapshotPos)
+    if (_currentState == Move && mover.getCurrentPos() >= _nextSnapshotPos)
     {
-        nextSnapshotPos += stepGraduations;
-        stepNumber++;
-        if (stepNumber > stepCount)
+        _nextSnapshotPos += stepGraduations;
+        _stepNumber++;
+        if (_stepNumber > stepCount)
         {
-            currentState = Waiting;
+            _currentState = Waiting;
         }
         else
         {
             display(mode, stepName);
             digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
-            timer = millis();
-            currentState = Exposure;
+            _timer = millis();
+            _currentState = Exposure;
         }
     }
 
-    if (isRunning && currentState != Beginning && mover.isStopped())
+    if (_isRunning && _currentState != Beginning && mover.isStopped())
     {
-        if (needToStoreNewPWM)
+        if (_needToStoreNewPWM)
         {
 #ifdef DEBUG_MODE
             Serial.println("Store new pwm = " + String(mover.getMaxPWM()));
 #endif
             Settings::setNonstopPWM(mover.getMaxPWM());
-            needToStoreNewPWM = false;
+            _needToStoreNewPWM = false;
         }
 
 #ifdef DEBUG_MODE
@@ -1479,11 +1488,12 @@ void Runner::runNonstop()
 
 void Runner::runVideo()
 {
-    if (!isRunning)
+    if (!_isRunning)
     {
+        mover.resetAbsolutePos();
         selector.menu.display("Video...", "");
         mover.run(Settings::getVideoPWM());
-        isRunning = true;
+        _isRunning = true;
         return;
     }
 
@@ -1537,16 +1547,14 @@ void Runner::runVideo()
 
 void Runner::runRotate()
 {
-    static State currentState;
-
-    if (!isRunning)
+    if (!_isRunning)
     {
         selector.menu.display("Rotation...", "<-  90\337  ->");
 #ifdef DEBUG_MODE
         mover.resetAbsolutePos();
 #endif
-        currentState = Waiting;
-        isRunning = true;
+        _currentState = Waiting;
+        _isRunning = true;
     }
     
     if (enc.press())
@@ -1560,47 +1568,47 @@ void Runner::runRotate()
         return;
     }
     
-    if (enc.turn() && currentState == Waiting)
+    if (enc.turn() && _currentState == Waiting)
     {
         if (enc.left())
         {
-            currentState = Move;
+            _currentState = Move;
             mover.move(-GRADUATIONS / 4);
         }
         else if (enc.right())
         {
-            currentState = Move;
+            _currentState = Move;
             mover.move(GRADUATIONS / 4);
         }
 
         return;
     }
     
-    if (currentState == Move)
+    if (_currentState == Move)
     {
 #ifdef DEBUG_MODE
         int32_t absolutePos = mover.getAbsolutePos();
         Serial.println("absolutePos = " + String(absolutePos));
 #endif
-        currentState = Waiting;
+        _currentState = Waiting;
     }
 }
 
 void Runner::finalize()
 {
-    isRunning = false;
+    _isRunning = false;
     mover.stop();
-    stepNumber = 0;
+    _stepNumber = 0;
     digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
     digitalWrite(CAMERA, CAMERA_LOW); // release camera
     selector.hold = false; // release selector
     enc.resetState(); // reset encoder
 }
 
-void Runner::display(String top, String stepName)
+void Runner::display(const char* top, const char* stepName)
 {
     char strBuf[20];
-    sprintf(strBuf, "%s %d (%d)", stepName.c_str(), stepNumber, Settings::getSteps());
+    sprintf(strBuf, "%s %d (%d)", stepName, _stepNumber, Settings::getSteps());
     selector.menu.display(top, strBuf);
 }
 

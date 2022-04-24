@@ -14,7 +14,7 @@
 #define GRADUATIONS 4320 // number of graduations per turn
 #define DEGREE (GRADUATIONS / 360)
 
-#define DEBUG_MODE
+//#define DEBUG_MODE
 
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
@@ -46,7 +46,10 @@ void writeMotorPWM(unsigned char pwm, bool forward = true)
 class Runner
 {
     public:
-        static const int delta = 5; // value to increment/decrement pwm
+        static inline bool isRunning()
+        {
+            return _isRunning;
+        }
         
         static void runAutomatic();
         
@@ -59,12 +62,26 @@ class Runner
             Exposure,
             Move
         };
+
+        static int16_t _stepNumber;
+        static unsigned long _timer;
+        static unsigned long _timer2;
+        static bool _isRunning;
+        static int32_t _lastGraduations;
+        static State _currentState;
         
         static void finalize();
         static void incrementStep();
         static void display(String top, String stepName);
 };
 Runner runner;
+
+int16_t Runner::_stepNumber = 0;
+unsigned long Runner::_timer = 0;
+unsigned long Runner::_timer2 = 0;
+bool Runner::_isRunning = false;
+int32_t Runner::_lastGraduations;
+Runner::State Runner::_currentState;
 
 struct MenuItem
 {
@@ -654,85 +671,96 @@ class Mover
 };
 Mover mover;
 
-int16_t stepNumber = 0;
-unsigned long timer = 0;
-bool isRunning = false;
 void Runner::runAutomatic()
 {
-    const String mode = "Auto...";
-    const String stepName = "photo";
-    static State currentState;
-    static int32_t lastGraduations;
+    const char* mode = "Auto...";
+    const char* stepName = "photo";
+#ifdef DEBUG_MODE
+    static int total = 0;
+#endif
     
     if (!mover.isStopped())
         return;
 
     int16_t stepCount = Settings::getSteps();
     int16_t stepGraduations = GRADUATIONS / stepCount;
-    if (!isRunning)
+    if (!_isRunning)
     {
         // Starting
-        stepNumber = 0;
+        _stepNumber = 0;
         digitalWrite(CAMERA, CAMERA_HIGH); // prepare camera
-        isRunning = true;
-        lastGraduations = 0;
+        _isRunning = true;
+        _lastGraduations = 0;
         mover.resetAbsolutePos();
-        timer = millis();
-        currentState = Beginning;
+        _timer = millis();
+        _currentState = Beginning;
+#ifdef DEBUG_MODE
+        total = 0;
+#endif
         return;
     }
 
-    if (currentState == Beginning && millis() - timer >= Settings::getExposure())
+    if (_currentState == Beginning && millis() - _timer >= 10) // 10 ms is a time for preparing camera
     {
-        stepNumber++;
+        _stepNumber++;
         display(mode, stepName);
         digitalWrite(SHUTTER, CAMERA_HIGH); // make first photo
-        timer = millis();
-        currentState = Exposure;
+        _timer = millis();
+        _currentState = Exposure;
         return;
     }
     
-    if (currentState == Exposure && millis() - timer >= Settings::getExposure())
+    if (_currentState == Exposure && millis() - _timer >= Settings::getExposure())
     {
         digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
-        currentState = Move;
+        _currentState = Move;
         int32_t absolutePos = mover.getAbsolutePos();
-        int error = lastGraduations - absolutePos;
+        int error = _lastGraduations - absolutePos;
+#ifdef DEBUG_MODE
+        total += absolutePos;
+        Serial.println("stepGraduations = " + String(stepGraduations) + "  absolutePos = " +
+            String(absolutePos) + "  error = " + String(error));
+#endif
         mover.resetAbsolutePos();
-        lastGraduations = stepGraduations + error;
-        mover.move(lastGraduations);
+        _lastGraduations = stepGraduations + error;
+        mover.move(_lastGraduations);
         return;
     }
     
-    if (currentState == Move)
+    if (_currentState == Move)
     {
-        if (stepNumber < stepCount)
+        if (_stepNumber < stepCount)
         {
-            timer = millis();
-            currentState = Delay;
+            _timer = millis();
+            _currentState = Delay;
         }
         else
         {
+#ifdef DEBUG_MODE
+            int32_t absolutePos = mover.getAbsolutePos();
+            total += absolutePos;
+            Serial.println("Total = " + String(total));
+#endif
             finalize();
         }
         return;
     }
 
-    if (currentState == Delay && millis() - timer >= Settings::getDelay())
+    if (_currentState == Delay && millis() - _timer >= Settings::getDelay())
     {
-        stepNumber++;
+        _stepNumber++;
         display(mode, stepName);
         digitalWrite(SHUTTER, CAMERA_HIGH); // make photo
-        timer = millis();
-        currentState = Exposure;
+        _timer = millis();
+        _currentState = Exposure;
     }
 }
 
 void Runner::finalize()
 {
-    isRunning = false;
+    _isRunning = false;
     mover.stop();
-    stepNumber = 0;
+    _stepNumber = 0;
     digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
     digitalWrite(CAMERA, CAMERA_LOW); // release camera
 }
@@ -766,7 +794,7 @@ class TurnMeasurer
     
                 case Measuring:
                     Runner::runAutomatic();
-                    if (isRunning)
+                    if (Runner::isRunning())
                         return;
 
                     _stop = millis();
@@ -933,13 +961,11 @@ void setup()
     digitalWrite(CAMERA, CAMERA_LOW); // release camera
 
     Serial.begin(9600);
+    worker.start();
 }
 
 void loop()
 {
     mover.tick();
     worker.tick();
-
-    if (worker.getState() == Waiting)
-        worker.start();
 }
