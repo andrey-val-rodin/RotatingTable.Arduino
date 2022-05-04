@@ -1,11 +1,12 @@
 #define ENCODER_OPTIMIZE_INTERRUPTS
 #include <Encoder.h>
+#include <PWM.h>
 
 #define MOTOR1 10
 #define MOTOR2 9
 #define MOTOR_ENC1 2
 #define MOTOR_ENC2 3
-#define MIN_PWM 60
+#define MIN_PWM 74
 #define MAX_PWM 255
 #define GRADUATIONS 4320 // number of graduations per turn
 #define DEGREE (GRADUATIONS / 360)
@@ -706,7 +707,10 @@ void setup()
     pinMode(MOTOR1, OUTPUT);
     pinMode(MOTOR2, OUTPUT);
 
-    Serial.begin(9600);
+    SetPinFrequencySafe(MOTOR1, 15000);
+    SetPinFrequencySafe(MOTOR2, 15000);
+
+    Serial.begin(115200);
 
     worker.start();
 }
