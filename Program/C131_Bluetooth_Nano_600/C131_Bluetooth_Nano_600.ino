@@ -10,7 +10,7 @@
 #define SHUTTER 6
 #define CAMERA_LOW LOW
 #define CAMERA_HIGH HIGH
-#define MIN_PWM 60
+#define MIN_PWM 48
 #define MAX_PWM 255
 #define GRADUATIONS 4320 // number of graduations per turn
 #define DEGREE (GRADUATIONS / 360)
@@ -120,13 +120,29 @@ class Settings
         // Function converts current user-friendly value 1-10 to this value.
         static uint16_t getRealAcceleration()
         {
-            int result = getAcceleration();
-            result = abs(result - 11); // reverse
-            result *= 10;
-            result += 10;
-            result *= DEGREE;
-            result /= 3;
-            return result; // value in range from 80 to 440 when GRADUATIONS = 4320
+            switch(getAcceleration())
+            {
+                case 1:
+                    return 550;
+                case 2:
+                    return 500;
+                case 3:
+                    return 450;
+                case 4:
+                    return 400;
+                case 5:
+                    return 350;
+                case 6:
+                    return 300;
+                case 7:
+                    return 250;
+                case 8:
+                    return 200;
+                case 9:
+                    return 150;
+                default:
+                    return 100;
+            }
         }
 
         static bool checkAcceleration(unsigned char value)
@@ -298,30 +314,19 @@ class Settings
         {
             static const unsigned char buff[] =
             {
-                73, 69, 63, 60, 56, 52, 49, 46, 44, 41, 39, 38, 36, 35, 34, 32, 31, 30, 29, 28, 27, 26,
-                25, 25, 24, 24, 24, 24, 23, 23, 22, 22, 22, 21, 21, 20, 20, 20, 19, 19, 19, 19, 18, 18,
-                18, 18, 17, 17, 17, 17, 17, 16, 16, 16, 16, 16, 16, 15, 15, 15, 15, 15, 15
+                141, 127, 114, 104, 96, 89, 83, 78, 74, 70, 66, 63, 60, 57, 55, 52, 50, 49, 50, 48, 47, 46, 45,
+                44, 43, 42, 41, 40, 39, 38, 38, 37, 36, 36, 35, 34, 34, 33, 33, 33, 32, 32, 31, 31, 30, 30, 30,
+                29, 29, 29, 28, 28, 28, 27, 27, 27, 27, 26, 26, 26, 25, 25, 25, 25, 24, 24, 24, 24, 23, 23, 23,
+                23, 23, 22, 22, 22, 22, 22, 22, 21, 21, 21, 21, 21, 20, 20, 20, 20, 20, 20, 20, 19, 19, 19, 19,
+                19, 19, 19, 19, 18, 18, 18, 18, 18, 18, 18, 18, 17, 17, 17, 17, 17, 17, 17, 17, 17, 16, 16, 16,
+                16, 16, 16, 16, 16, 16, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 14, 14, 14, 14, 14, 14,
+                14, 14, 14, 14, 14, 14, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 12, 12, 12, 12, 12, 12, 12,
+                12, 12, 12, 12, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 10, 10, 10, 10, 10, 10, 10, 10,
+                10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10
             };
             
             int index = pwm - MIN_PWM;
-            if (index < 63)
-                return buff[index];
-            else if (index < 72)
-                return 14;
-            else if (index < 81)
-                return 13;
-            else if (index < 90)
-                return 12;
-            else if (index < 101)
-                return 11;
-            else if (index < 112)
-                return 10;
-            else if (index < 124)
-                return 9;
-            else if (index < 138)
-                return 8;
-            else
-                return 7;
+            return buff[index];
         }
 
         static float getPWMOfTurn(float time)
