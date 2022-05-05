@@ -45,7 +45,6 @@ class Settings
 
         // Returns number of graduations for acceleration and deceleration from min to max PWM and vice versa.
         // Function converts current user-friendly value 1-10 to this value.
-        // Note that real value shouldn't be less than 80 when GRADUATIONS = 4320.
         static uint16_t getRealAcceleration()
         {
             switch(getAcceleration())
