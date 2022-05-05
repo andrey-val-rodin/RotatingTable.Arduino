@@ -1,5 +1,6 @@
 #define ENCODER_OPTIMIZE_INTERRUPTS
 #include <Encoder.h>
+#include <PWM.h>
 
 #define MOTOR1 10
 #define MOTOR2 9
@@ -9,12 +10,12 @@
 #define SHUTTER 6
 #define CAMERA_LOW HIGH
 #define CAMERA_HIGH LOW
-#define MIN_PWM 60
+#define MIN_PWM 77
 #define MAX_PWM 255
 #define GRADUATIONS 4320 // number of graduations per turn
 #define DEGREE (GRADUATIONS / 360)
 
-//#define DEBUG_MODE
+#define DEBUG_MODE
 
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
@@ -167,13 +168,29 @@ class Settings
         // Function converts current user-friendly value 1-10 to this value.
         static uint16_t getRealAcceleration()
         {
-            int result = getAcceleration();
-            result = abs(result - 11); // reverse
-            result *= 10;
-            result += 10;
-            result *= DEGREE;
-            result /= 3;
-            return result; // value in range from 80 to 440 when GRADUATIONS = 4320
+            switch(getAcceleration())
+            {
+                case 1:
+                    return 550;
+                case 2:
+                    return 500;
+                case 3:
+                    return 450;
+                case 4:
+                    return 400;
+                case 5:
+                    return 350;
+                case 6:
+                    return 300;
+                case 7:
+                    return 250;
+                case 8:
+                    return 200;
+                case 9:
+                    return 150;
+                default:
+                    return 100;
+            }
         }
 
         static bool checkAcceleration(unsigned char value)
@@ -959,6 +976,9 @@ void setup()
     pinMode(SHUTTER, OUTPUT);
     digitalWrite(SHUTTER, CAMERA_LOW); // release shutter
     digitalWrite(CAMERA, CAMERA_LOW); // release camera
+
+    SetPinFrequencySafe(MOTOR1, 15000);
+    SetPinFrequencySafe(MOTOR2, 15000);
 
     Serial.begin(9600);
     worker.start();
