@@ -3,7 +3,7 @@
 #include <PWM.h>
 
 #define MOTOR1 10
-#define MOTOR2 9
+#define MOTOR2 11
 #define MOTOR_ENC1 2
 #define MOTOR_ENC2 3
 #define CAMERA 5
