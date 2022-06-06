@@ -763,10 +763,10 @@ class MinPreciser
 
         int calcGraduationCount()
         {
-            return 
-                (_step >= 0 && _step < stepsLength)
+            int res = (_step >= 0 && _step < stepsLength)
                 ? GRADUATIONS / steps[_step]
                 : 1;
+            return res;
         }
 };
 
