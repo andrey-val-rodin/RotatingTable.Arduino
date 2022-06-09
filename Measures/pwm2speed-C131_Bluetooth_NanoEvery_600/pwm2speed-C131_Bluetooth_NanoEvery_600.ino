@@ -9,8 +9,6 @@
 #define GRADUATIONS 4320 // number of graduations per turn
 #define DEGREE (GRADUATIONS / 360)
 
-#define DEBUG_MODE
-
 Encoder encoder(MOTOR_ENC1, MOTOR_ENC2);
 
 // We must increase the PWM to reduce the noise.
@@ -324,18 +322,14 @@ class Mover
             if (millis() - _startTimer2 >= 100 * timeMultiplier)
             {
                 int limit = calcHighLimitOfMinPWM();
-#ifdef DEBUG_MODE
                 Serial.println("High limit of _minPWM: " + String(limit));
-#endif
                 if (_minPWM >= limit)
                 {
                     // Unable to increase _minPWM anymore
                     // If correction, wait a second, and if table is still not moving, stop it
                     if (_state == Correction && millis() - _startTimer >= 1000 * timeMultiplier)
                     {
-#ifdef DEBUG_MODE
                         Serial.println("Unable to start, stopping...");
-#endif
                         stop();
                     }
                     return false;
@@ -347,9 +341,7 @@ class Mover
                     _minPWM = limit;
                 _currentPWM = _minPWM;
                 writeMotorPWM(_currentPWM, _forward);
-#ifdef DEBUG_MODE
                 Serial.println("Increase PWM. New value: " + String(_minPWM));
-#endif
             }
 
             return false;
@@ -490,9 +482,7 @@ class Mover
             else
             {
                 // Make correction
-#ifdef DEBUG_MODE
                 Serial.println("Error = " + String(error) + ", correction...");
-#endif
                 stop();
                 move(error, MIN_PWM);
                 _state = Correction;
