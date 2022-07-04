@@ -1206,7 +1206,7 @@ class Runner
                 return;
             }
             
-            char direction = mover.isForward() ? 1 : -1;
+            signed char direction = mover.isForward() ? 1 : -1;
             if (getStopping())
             {
                 if (mover.isUniformMotion() && getStopping() == SoftStop)
@@ -1377,7 +1377,7 @@ class Runner
 
         bool canIncreasePWM()
         {
-            char direction = mover.isForward() ? 1 : -1;
+            signed char direction = mover.isForward() ? 1 : -1;
             int d;
             switch (getMode())
             {
@@ -1396,7 +1396,7 @@ class Runner
 
         bool canDecreasePWM()
         {
-            char direction = mover.isForward() ? 1 : -1;
+            signed char direction = mover.isForward() ? 1 : -1;
             int d;
             switch (getMode())
             {

@@ -1219,7 +1219,7 @@ class Runner
                 return;
             }
             
-            char direction = mover.isForward() ? 1 : -1;
+            signed char direction = mover.isForward() ? 1 : -1;
             if (getStopping())
             {
                 if (mover.isUniformMotion() && getStopping() == SoftStop)
@@ -1390,7 +1390,7 @@ class Runner
 
         bool canIncreasePWM()
         {
-            char direction = mover.isForward() ? 1 : -1;
+            signed char direction = mover.isForward() ? 1 : -1;
             int d;
             switch (getMode())
             {
@@ -1409,7 +1409,7 @@ class Runner
 
         bool canDecreasePWM()
         {
-            char direction = mover.isForward() ? 1 : -1;
+            signed char direction = mover.isForward() ? 1 : -1;
             int d;
             switch (getMode())
             {
@@ -1725,9 +1725,9 @@ class Listener
                             Write(Settings::getVideoPWM() == value? "OK" : "ERR");
                         }
                         else
-// temporarily
-Write("OK");
-//                            Write("ERR");
+                            // Phone may try to set a value that is out of range,
+                            // so always return OK
+                            Write("OK");
                     }
                     else if (command.startsWith("NFREQ"))
                     {

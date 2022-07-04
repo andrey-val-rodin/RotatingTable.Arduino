@@ -1503,7 +1503,7 @@ void Runner::runVideo()
         return;
     }
     
-    char direction = mover.isForward() ? 1 : -1;
+    signed char direction = mover.isForward() ? 1 : -1;
     if (enc.press())
     {
         if (mover.getState() == mover.State::Run)
