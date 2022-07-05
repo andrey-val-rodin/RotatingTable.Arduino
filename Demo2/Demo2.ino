@@ -517,7 +517,7 @@ class Mover
                     
                 case RunDec:
                     decelerate();
-                    if (_currentPWM <= MIN_PWM)
+                    if (_currentPWM <= _minPWM)
                         stop();
                     else
                         writeMotorPWM(_currentPWM, _forward);
