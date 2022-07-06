@@ -363,13 +363,14 @@ class Settings
         {
             static const unsigned char buff[] =
             {
-                108, 84, 70, 61, 54, 48, 44, 40, 37, 34, 32, 30, 29, 27, 26, 24, 24, 22, 22, 20,
-                20, 19, 19, 18, 17, 17, 16, 16, 15, 15, 15, 14, 14, 13, 13, 13, 13, 12, 12, 12,
-                12, 11, 11, 11, 11, 10, 10, 10, 10, 10, 10, 9, 9, 9, 9, 9, 9, 9, 9, 8,
-                8, 8, 8, 8, 8, 8, 8, 8, 8, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
-                7, 7, 6, 6, 6, 6, 6, 6 
+                108, 87, 72, 62, 55, 49, 44, 40, 37, 35, 32, 30, 29, 27, 26, 25, 23, 22, 22, 21,
+                20, 19, 18, 18, 17, 17, 16, 16, 15, 15, 15, 14, 14, 13, 13, 13, 13, 12, 12, 12,
+                11, 11, 11, 11, 11, 11, 10, 10, 10, 10, 10, 10, 9, 9, 9, 9, 9, 9, 9, 9,
+                8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
+                7, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6
             };
             
+            pwm = PWMValidator::validate(pwm);
             int index = pwm - MIN_PWM;
             return buff[index];
         }
@@ -458,7 +459,7 @@ class Mover
             _maxPWM = maxPWM;
             _cumulativePos -= encoder.getCount();
             encoder.setCount(0);
-	    _acceleration = Settings::getAcceleration();
+            _acceleration = Settings::getAcceleration();
             _realAcceleration = Settings::getRealAcceleration();
             _startTimer2 = _startTimer = millis();
             _started = false;

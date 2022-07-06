@@ -273,7 +273,7 @@ class Mover
             _maxPWM = maxPWM;
             _cumulativePos -= encoder.getCount();
             encoder.setCount(0);
-	    _acceleration = Settings::getAcceleration();
+            _acceleration = Settings::getAcceleration();
             _realAcceleration = Settings::getRealAcceleration();
             _startTimer2 = _startTimer = millis();
             _started = false;

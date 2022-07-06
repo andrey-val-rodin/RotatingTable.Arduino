@@ -127,7 +127,7 @@ class Mover
             _maxPWM = maxPWM;
             _cumulativePos -= encoder.getCount();
             encoder.setCount(0);
-	    _acceleration = Settings::getAcceleration();
+            _acceleration = Settings::getAcceleration();
             _realAcceleration = Settings::getRealAcceleration();
             _startTimer2 = _startTimer = millis();
             _started = false;
@@ -644,15 +644,26 @@ class Measurer
 
         void printTimes()
         {
-            Serial.print("{ ");
+            Serial.println("{");
+            Serial.print("    ");
             for (int i = 0; i < MAX_PWM - MIN_PWM + 1; i++)
             {
                 if (i > 0)
-                    Serial.print(", ");
+                {
+                    if (i % 20 == 0)
+                    {
+                        Serial.println(",");
+                        Serial.print("    ");
+                    }
+                    else
+                        Serial.print(", ");
+                }
 
                 Serial.print(String(_times[i]));
             }
-            Serial.print(" }");
+            
+            Serial.println();
+            Serial.println("};");
         }
     
         void cancel()
