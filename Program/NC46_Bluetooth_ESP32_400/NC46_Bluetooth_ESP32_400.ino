@@ -4,6 +4,7 @@
 #include <BLEServer.h>
 
 #define MOTOR 14
+#define MOTOR_CHANNEL 0
 #define DIRECTION 13
 #define MOTOR_POWER 32
 #define MOTOR_ENC1 33
@@ -110,7 +111,7 @@ void Write(const String& text)
 
 void writeMotorPWM(unsigned char pwm, bool forward = true)
 {
-    analogWrite(MOTOR, pwm);
+    ledcWrite(MOTOR_CHANNEL, pwm);
     digitalWrite(DIRECTION, forward? HIGH : LOW);
 }
 
@@ -1952,10 +1953,9 @@ void setup()
     encoder.attachFullQuad(33, 25);
     encoder.clearCount();
 
-    int channel = 0;
-    ledcAttachPin(MOTOR, channel);
+    ledcAttachPin(MOTOR, MOTOR_CHANNEL);
     // frequency 1000 Hz, resolution 8 bit
-    ledcSetup(channel, 1000, 8);
+    ledcSetup(MOTOR_CHANNEL, 1000, 8);
     
     pinMode(DIRECTION, OUTPUT);
     pinMode(MOTOR_POWER, OUTPUT);

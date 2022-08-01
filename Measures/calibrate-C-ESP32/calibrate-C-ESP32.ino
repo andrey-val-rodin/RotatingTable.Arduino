@@ -2,6 +2,8 @@
 
 #define MOTOR1 13
 #define MOTOR2 14
+#define MOTOR_CHANNEL1 0
+#define MOTOR_CHANNEL2 1
 #define MOTOR_ENC1 25
 #define MOTOR_ENC2 33
 #define GRADUATIONS 4320 // number of graduations per turn
@@ -23,11 +25,11 @@ void writeMotorPWM(unsigned char pwm, bool forward = true)
 {
     if (pwm == 0)
     {
-        analogWrite(MOTOR1, 0);
-        analogWrite(MOTOR2, 0);
+        ledcWrite(MOTOR_CHANNEL1, 0);
+        ledcWrite(MOTOR_CHANNEL2, 0);
     }
     else
-        analogWrite(forward? MOTOR1 : MOTOR2, pwm);
+        ledcWrite(forward? MOTOR_CHANNEL1 : MOTOR_CHANNEL2, pwm);
 }
 
 class PWMValidator
@@ -1125,14 +1127,12 @@ void setup()
     encoder.attachFullQuad(MOTOR_ENC1, MOTOR_ENC2);
     encoder.clearCount();
 
-    int channel = 0;
-    ledcAttachPin(MOTOR1, channel);
+    ledcAttachPin(MOTOR1, MOTOR_CHANNEL1);
     // frequency 20000 Hz, resolution 8 bit
-    ledcSetup(channel, 24000, 8);
-    channel = 1;
-    ledcAttachPin(MOTOR2, channel);
+    ledcSetup(MOTOR_CHANNEL1, 20000, 8);
+    ledcAttachPin(MOTOR2, MOTOR_CHANNEL2);
     // frequency 20000 Hz, resolution 8 bit
-    ledcSetup(channel, 24000, 8);
+    ledcSetup(MOTOR_CHANNEL2, 20000, 8);
     
     pinMode(MOTOR1, OUTPUT);
     pinMode(MOTOR2, OUTPUT);
